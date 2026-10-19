@@ -1,0 +1,27 @@
+# pętle, break, continue, zagnieżdżenie
+i = 0
+while i < 10 {
+    i += 1
+    if i % 2 == 0 {
+        continue
+    }
+    if i > 7 {
+        break
+    }
+    calc(i)
+}
+a = 1
+while a <= 3 {
+    b = 1
+    while 1 {
+        if b > a {
+            break
+        }
+        calc(a * 10 + b)
+        b += 1
+    }
+    a += 1
+}
+while 0 {
+    print("nigdy")
+}

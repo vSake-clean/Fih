@@ -3,12 +3,19 @@
 ;   fih build program.fh [-o wynik]      kompilacja do pliku wykonywalnego
 ;   fih --help | -h                      opis użycia (stdout, kod 0)
 ;   fih --version                        wersja (stdout, kod 0)
+;
+; Program jest najpierw wykonywany szybkim silnikiem 0.1 (interp.asm, tylko
+; print i calc, na wielu rdzeniach) z wyjściem zbieranym w pamięci. Gdy ten
+; trafi na cokolwiek innego (zmienne, if, while, błąd), wraca tu (bail_ip),
+; a program kompiluje comp.asm: sprawdza cały plik, potem uruchamia kod
+; maszynowy w pamięci (JIT) albo zapisuje go jako plik ELF.
 %include "fih.inc"
 default rel
 
 global _start
-extern run_program, out_flush, out_to_memory, mem_ptr, mem_len
-extern write_all, write_elf, die_noline, expr_init
+extern run_program, out_flush, out_to_memory, mem_ptr, mem_len, out_reset
+extern write_all, write_elf, die_noline, expr_init, bail_rsp, bail_ip
+extern comp_compile, comp_run_jit, comp_write_elf
 
 %define PATH_MAX 4096
 
@@ -18,6 +25,8 @@ extern write_all, write_elf, die_noline, expr_init
 section .bss
 statbuf:  resb 144          ; struct stat, st_size pod offsetem 48
 out_path: resb PATH_MAX
+src_ptr:  resq 1            ; wczytany program
+src_len:  resq 1
 
 section .rodata
 msg_usage:      db "użycie:", 10
@@ -137,14 +146,23 @@ _start:
     call streq
     je .same
 
-    call out_to_memory
     mov rdi, r14
-    call load_and_run
+    call load_source
+    call run_fast
+    test eax, eax
+    jnz .build_comp
     call out_flush
     mov rdi, r15
     mov rsi, [mem_ptr]
     mov rdx, [mem_len]
     call write_elf
+    jmp .exit_ok
+.build_comp:
+    mov rdi, [src_ptr]
+    mov rsi, [src_len]
+    call comp_compile
+    mov rdi, r15
+    call comp_write_elf
     jmp .exit_ok
 
     ; --- fih plik.fh ---
@@ -152,8 +170,15 @@ _start:
     cmp rbx, 2
     jne .usage
     mov rdi, [rsp+16]
-    call load_and_run
+    call load_source
+    call run_fast
+    test eax, eax
+    jnz do_jit
     call out_flush
+    mov edi, STDOUT
+    mov rsi, [mem_ptr]
+    mov rdx, [mem_len]
+    call write_all
 .exit_ok:
     mov eax, SYS_EXIT
     xor edi, edi
@@ -213,8 +238,49 @@ on_sigbus:
     mov esi, msg_changed_len
     jmp die_noline
 
-; load_and_run(rdi=ścieżka) — wczytuje plik (mmap) i wykonuje program
-load_and_run:
+; programy 0.2: kompilacja i uruchomienie w pamięci
+do_jit:
+    mov rdi, [src_ptr]
+    mov rsi, [src_len]
+    call comp_compile
+    jmp comp_run_jit
+
+; run_fast -> eax = 0: program wykonał silnik 0.1, wynik w pamięci (mem_ptr);
+; eax = 1: program wymaga kompilatora (wyjście porzucone)
+run_fast:
+    push rbx                ; powrót przez bail_ip omija epilogi funkcji —
+    push rbp                ; rejestry zachowywane odtwarzamy sami
+    push r12
+    push r13
+    push r14
+    push r15
+    call out_to_memory
+    mov [bail_rsp], rsp
+    lea rax, [.bailed]
+    mov [bail_ip], rax
+    mov rsi, [src_len]
+    test rsi, rsi
+    jz .ok
+    mov rdi, [src_ptr]
+    call run_program
+.ok:
+    mov qword [bail_rsp], 0
+    xor eax, eax
+    jmp .ret
+.bailed:
+    call out_reset
+    mov eax, 1
+.ret:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
+
+; load_source(rdi=ścieżka) — wczytuje plik (mmap albo read) do src_ptr/src_len
+load_source:
     push r12
     push r13
     push rbx
@@ -251,18 +317,14 @@ load_and_run:
     cmp rax, -4095
     jae .read_fail
 
-    mov rdi, rax
-    mov rsi, r13
-    call run_program
+    mov [src_ptr], rax
+    mov [src_len], r13
     jmp .done
 .stream:
     mov edi, r12d
     call read_stream
-    test rdx, rdx
-    jz .done
-    mov rdi, rax
-    mov rsi, rdx
-    call run_program
+    mov [src_ptr], rax
+    mov [src_len], rdx
 .done:
     mov eax, SYS_CLOSE
     mov rdi, r12
@@ -320,7 +382,7 @@ read_stream:
     syscall
 .check:
     cmp rax, -4095
-    jae load_and_run.read_fail
+    jae load_source.read_fail
     mov rbx, rax
     mov r13, r15
 .read:
@@ -333,7 +395,7 @@ read_stream:
     cmp rax, -EINTR
     je .read
     test rax, rax
-    js load_and_run.read_fail
+    js load_source.read_fail
     jz .eof
     add r12, rax
     jmp .loop

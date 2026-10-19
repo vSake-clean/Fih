@@ -1,0 +1,8 @@
+i = 0
+while i < 3 {
+  if i == 1 {
+    calc(t)
+  }
+  t = i
+  i += 1
+}

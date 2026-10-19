@@ -21,7 +21,7 @@
 %include "fih.inc"
 default rel
 
-global eval_expr, eval_expr_soft, expr_init
+global eval_expr, eval_expr_soft, expr_init, stack_budget
 extern die
 
 ; ile stosu mogą zużyć nawiasy (najwyżej 1/4 limitu stosu procesu)

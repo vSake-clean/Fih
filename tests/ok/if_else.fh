@@ -1,0 +1,23 @@
+i = 0
+while i < 6 {
+    if i == 0 {
+        print("zero")
+    } else if i == 1 {
+        print("jeden")
+    } else if i < 4 {
+        if i % 2 == 0 {
+            print("dwa")
+        } else {
+            print("trzy")
+        }
+    } else {
+        calc(i)
+    }
+    i += 1
+}
+if 0 {
+    print("nie")
+}
+if 1 {
+    print("tak")
+}

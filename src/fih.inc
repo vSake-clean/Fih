@@ -2,6 +2,14 @@
 
 %define FIH_VERSION "0.1.1"
 
+; obszar danych programów 0.2 (rejestr r15 w wygenerowanym kodzie i w rt.asm)
+%define D_OUTLEN    0           ; zajęta część bufora wyjścia
+%define D_OUTBUF    64          ; bufor wyjścia
+%define D_OUTSZ     65536
+%define D_VARS      (D_OUTBUF + D_OUTSZ)    ; zmienne: 16 B każda (wartość, flaga "ma wartość")
+%define SYS_MPROTECT 10
+%define PROT_EXEC   4
+
 %define SYS_READ    0
 %define SYS_WRITE   1
 %define SYS_OPEN    2

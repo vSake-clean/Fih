@@ -7,6 +7,7 @@ default rel
 global write_fd, write_all, out_flush, out_write, out_write_nl, out_byte, out_int, out_int_nl, fmt_int
 global die, die_noline, out_to_memory, mem_ptr, mem_len
 global out_raw, quiet_errors, child_pids, kill_children, out_to_fixed_memory
+global die_name, out_reset, bail_rsp, bail_ip
 extern cur_line
 
 section .bss
@@ -19,6 +20,9 @@ mem_cap: resq 1
 mem_fixed: resq 1           ; 1 = bufor stałej wielkości (nie wolno go powiększać)
 quiet_errors: resq 1        ; 1 w procesie potomnym: błąd = tylko kod wyjścia 3
 child_pids:   resq MAXP     ; procesy potomne (par.asm) do zabicia przy błędzie
+bail_rsp:     resq 1        ; != 0: błąd w programie nie kończy fih, tylko wraca
+bail_ip:      resq 1        ;   do main (bail_ip, stos bail_rsp) — wtedy program
+                            ;   kompiluje comp.asm, który zgłosi błąd sam
 
 section .rodata
 msg_prefix_line:     db "fih: błąd w linii "
@@ -506,8 +510,20 @@ die_hook:
     mov edi, 3
     syscall
 
+; out_reset() — porzuca zebrane wyjście, od teraz wyjście na stdout
+out_reset:
+    xor eax, eax
+    mov [to_mem], rax
+    mov [outlen], rax
+    mov [mem_len], rax
+    ret
+
 ; die(rdi=komunikat, rsi=długość) — "fih: błąd w linii N: komunikat", exit 1
 die:
+    cmp qword [quiet_errors], 0
+    jne die_hook.quiet
+    cmp qword [bail_rsp], 0
+    jne .bail
     call die_hook
     push rdi
     push rsi
@@ -529,6 +545,49 @@ die:
     mov edi, STDERR
     lea rsi, [msg_colon]
     mov edx, 2
+    call write_all
+    jmp die_tail
+.bail:
+    call kill_children
+    mov rsp, [bail_rsp]
+    mov qword [bail_rsp], 0
+    jmp [bail_ip]
+
+; die_name(rdi=część 1, esi=długość, rdx=nazwa, ecx=długość, r8=część 3,
+; r9d=długość) — "fih: błąd w linii N: część 1 + nazwa + część 3", exit 1
+die_name:
+    push r8
+    push r9
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    call out_flush
+    mov edi, STDERR
+    lea rsi, [msg_prefix_line]
+    mov edx, msg_prefix_line_len
+    call write_all
+    sub rsp, 32
+    mov rdi, [cur_line]
+    lea rsi, [rsp+32]
+    call fmt_int
+    lea rdx, [rsp+32]
+    sub rdx, rax
+    mov rsi, rax
+    mov edi, STDERR
+    call write_all
+    add rsp, 32
+    mov edi, STDERR
+    lea rsi, [msg_colon]
+    mov edx, 2
+    call write_all
+    mov edi, STDERR
+    pop rsi
+    pop rdx
+    call write_all
+    mov edi, STDERR
+    pop rsi
+    pop rdx
     call write_all
     jmp die_tail
 

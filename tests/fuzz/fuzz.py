@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Fuzzer Fih: losowe programy (poprawne i zepsute) porównywane z wyrocznią.
 
-Wyrocznia to niezależna implementacja języka w Pythonie. Dla każdego
-programu sprawdzamy oba tryby:
-  interpretacja: stdout, stderr i kod wyjścia muszą być identyczne,
-  kompilacja:    przy błędzie ten sam komunikat i brak pliku wynikowego,
-                 inaczej skompilowany plik daje pełne oczekiwane wyjście.
+Programy mają tylko print i calc (składnia 0.1), więc wykonuje je głównie
+szybki silnik interp.asm. Wyrocznia to niezależna implementacja języka
+w Pythonie (oracle.py); porównanie obu trybów jak w fuzz2.py (check).
 Każde zakończenie sygnałem (np. SIGSEGV) to błąd.
 
 użycie: fuzz.py [liczba_programów] [ziarno]
 """
 import os, random, subprocess, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import oracle
+from fuzz2 import check
 
 sys.setrecursionlimit(100000)
 FIH = os.environ.get("FIH") or os.path.join(os.path.dirname(__file__), "..", "..", "fih")
@@ -106,62 +107,7 @@ def evaluate(s: bytes) -> int:
 
 def run_oracle(src: bytes):
     """-> (stdout, stderr, kod)"""
-    out = bytearray(); p = 0; n = len(src); line = 1
-    def blank():
-        nonlocal p
-        while p < n and src[p] in b" \t\r": p += 1
-    try:
-        while True:
-            blank()
-            if p >= n: break
-            c = src[p]
-            if c == 10: p += 1; line += 1; continue
-            if c == 35:
-                while p < n and src[p] != 10: p += 1
-                continue
-            start = p
-            if 48 <= c <= 57: raise FihError("char")
-            while p < n and (src[p] == 95 or 48 <= src[p] <= 57 or 97 <= (src[p] | 32) <= 122): p += 1
-            name = src[start:p]
-            if not name: raise FihError("char")
-            blank()
-            if p >= n or src[p] != 40: raise FihError("lparen")
-            p += 1; blank()
-            if p >= n or src[p] != 34: raise FihError("string")
-            p += 1; s0 = p
-            while True:
-                if p >= n or src[p] == 10: raise FihError("unterminated")
-                ch = src[p]
-                if ch == 34: break
-                p += 1
-                if ch == 92:
-                    if p >= n or src[p] == 10: raise FihError("unterminated")
-                    p += 1
-            body = src[s0:p]; p += 1
-            blank()
-            if p >= n or src[p] != 41: raise FihError("rparen")
-            p += 1; blank()
-            if p < n and src[p] not in b"\n#": raise FihError("trailing")
-            if name == b"print":
-                i = 0
-                while i < len(body):
-                    if body[i] == 92:
-                        e = body[i + 1]
-                        if e == 110: out += b"\n"
-                        elif e == 116: out += b"\t"
-                        elif e in b'\\"': out.append(e)
-                        else: raise FihError("escape")
-                        i += 2
-                    else:
-                        out.append(body[i]); i += 1
-                out += b"\n"
-            elif name == b"calc":
-                out += str(evaluate(body)).encode() + b"\n"
-            else:
-                raise FihError("unknown")
-    except FihError as e:
-        return bytes(out), f"fih: błąd w linii {line}: {MSG[e.args[0]]}\n".encode(), 1
-    return bytes(out), b"", 0
+    return oracle.run(src)[:3]
 
 # ---------- generator ----------
 def gen_number(r):
@@ -216,32 +162,12 @@ def main():
     seed = int(sys.argv[2]) if len(sys.argv) > 2 else random.randrange(1 << 30)
     r = random.Random(seed)
     tmp = tempfile.mkdtemp()
-    prog, binp = os.path.join(tmp, "p.fh"), os.path.join(tmp, "p")
     failures = 0
     stats = {"ok": 0, "err": 0}
     for i in range(count):
         src = gen_program(r)
-        exp_out, exp_err, exp_code = run_oracle(src)
-        stats["ok" if exp_code == 0 else "err"] += 1
-        open(prog, "wb").write(src)
-        problems = []
-        res = subprocess.run([FIH, prog], capture_output=True, timeout=10)
-        if res.returncode < 0: problems.append(f"interpretacja: sygnał {-res.returncode}")
-        elif (res.stdout, res.stderr, res.returncode) != (exp_out, exp_err, exp_code):
-            problems.append(f"interpretacja: kod {res.returncode} (oczekiwano {exp_code}), stderr {res.stderr!r} (oczekiwano {exp_err!r}), stdout zgodny: {res.stdout == exp_out}")
-        if os.path.exists(binp): os.remove(binp)
-        res = subprocess.run([FIH, "build", prog, "-o", binp], capture_output=True, timeout=10)
-        if res.returncode < 0: problems.append(f"kompilacja: sygnał {-res.returncode}")
-        elif exp_code:
-            if (res.stderr, res.returncode) != (exp_err, 1) or res.stdout or os.path.exists(binp):
-                problems.append(f"kompilacja: kod {res.returncode}, stderr {res.stderr!r}, plik powstał: {os.path.exists(binp)}")
-        else:
-            if res.returncode or res.stderr or res.stdout:
-                problems.append(f"kompilacja: kod {res.returncode}, stderr {res.stderr!r}")
-            else:
-                run = subprocess.run([binp], capture_output=True, timeout=10)
-                if (run.stdout, run.stderr, run.returncode) != (exp_out, b"", 0):
-                    problems.append(f"skompilowany program: kod {run.returncode}, stdout zgodny: {run.stdout == exp_out}")
+        stats["ok" if oracle.run(src)[2] == 0 else "err"] += 1
+        problems = check(src, tmp)
         if problems:
             failures += 1
             path = os.path.join(os.path.dirname(__file__), f"fail_{seed}_{i}.fh")

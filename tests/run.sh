@@ -23,13 +23,24 @@ for f in tests/ok/*.fh; do
     fi
 done
 
+# błąd w trakcie (dzielenie przez zero, przepełnienie, zmienna bez wartości):
+# build się udaje, a skompilowany program kończy się tym samym błędem;
+# wyjście przed błędem: X.out (gdy brak — puste). Każdy inny błąd jest
+# wykrywany przed uruchomieniem: nic nie jest wypisane, build nie tworzy pliku.
+runtime_re=': (dzielenie przez zero|przepełnienie: wynik poza zakresem liczb 64-bitowych|zmienna .* nie ma jeszcze wartości)$'
 for f in tests/err/*.fh; do
     exp=$(cat "${f%.fh}.err")
-    out=$(./fih "$f" 2>&1 >/dev/null); code=$?
-    [[ $code == 1 && "$out" == "$exp" ]] && ok || bad "interpretacja $f (kod $code): $out"
+    expout=""; [[ -f "${f%.fh}.out" ]] && expout=$(cat "${f%.fh}.out")
+    out=$(./fih "$f" 2>"$T/err"); code=$?
+    [[ $code == 1 && "$(cat "$T/err")" == "$exp" && "$out" == "$expout" ]] && ok || bad "interpretacja $f (kod $code): $(cat "$T/err")"
     rm -f "$T/bin"
-    out=$(./fih build "$f" -o "$T/bin" 2>&1); code=$?
-    [[ $code == 1 && "$out" == "$exp" && ! -e "$T/bin" ]] && ok || bad "kompilacja $f (kod $code): $out"
+    if [[ "$exp" =~ $runtime_re ]]; then
+        ./fih build "$f" -o "$T/bin" 2>"$T/err" && out=$("$T/bin" 2>"$T/err"); code=$?
+        [[ $code == 1 && "$(cat "$T/err")" == "$exp" && "$out" == "$expout" ]] && ok || bad "kompilacja $f (kod $code): $(cat "$T/err")"
+    else
+        out=$(./fih build "$f" -o "$T/bin" 2>&1); code=$?
+        [[ $code == 1 && "$out" == "$exp" && ! -e "$T/bin" ]] && ok || bad "kompilacja $f (kod $code): $out"
+    fi
 done
 
 # wiersz poleceń
@@ -92,8 +103,44 @@ cmp -s <(ulimit -v 200000; ./fih "$T/par/program.fh") "$T/par/expected" && ok ||
 [[ "$(./fih "$T/par/err.fh" 2>&1 >/dev/null)" == "fih: błąd w linii 30001: dzielenie przez zero" ]] && ok || bad "wielordzeniowo: numer linii błędu"
 cmp -s <(./fih "$T/par/err.fh" 2>/dev/null) "$T/par/expected" && ok || bad "wielordzeniowo: wyjście przed błędem"
 [[ "$(prlimit --nproc=1 ./fih "$T/par/err.fh" 2>&1 >/dev/null)" == "fih: błąd w linii 30001: dzielenie przez zero" ]] && ok || bad "fork niemożliwy: numer linii błędu"
+# kompilator 0.2: limity i wyjście
+python3 -c "n=21846; print('x = 1'); print('calc(' + '('*n + 'x' + ')'*n + ')')" > "$T/d1.fh"
+[[ "$(./fih "$T/d1.fh")" == 1 ]] && ok || bad "0.2: 21846 nawiasów"
+python3 -c "n=21847; print('x = 1'); print('calc(' + '('*n + 'x' + ')'*n + ')')" > "$T/d2.fh"
+[[ "$(./fih "$T/d2.fh" 2>&1)" == "fih: błąd w linii 2: wyrażenie zbyt głęboko zagnieżdżone" ]] && ok || bad "0.2: 21847 nawiasów"
+python3 -c "n=20000; print('x = 1'); print('calc(' + '(x or x and not x == x + x * '*n + 'x' + ')'*n + ')')" > "$T/d3.fh"
+for st in 256 8192 unlimited; do
+    (ulimit -s $st; ./fih "$T/d3.fh" >/dev/null 2>&1); code=$?
+    [[ $code -le 1 ]] && ok || bad "0.2: złożone nawiasy, ulimit -s $st (kod $code)"
+done
+python3 -c "
+for i in range(65536): print(f'v{i} = {i}')
+print('calc(v65535 + v0)')" > "$T/v.fh"
+[[ "$(./fih "$T/v.fh")" == 65535 ]] && ok || bad "0.2: 65536 zmiennych"
+echo 'v65536 = 1' >> "$T/v.fh"
+[[ "$(./fih "$T/v.fh" 2>&1)" == "fih: błąd w linii 65538: za dużo zmiennych (max 65536)" ]] && ok || bad "0.2: 65537 zmiennych"
+python3 -c "
+n = 65536
+print('x = 0'); print('if 1 {' * 1)
+for i in range(n - 1): print('while 1 {')
+print('x = 5')
+for i in range(n - 1): print('break'); print('}')
+print('}'); print('calc(x)')" > "$T/b.fh"
+[[ "$(./fih "$T/b.fh")" == 5 ]] && ok || bad "0.2: 65536 zagnieżdżonych bloków"
+python3 -c "
+for i in range(65537): print('if 1 {')
+for i in range(65537): print('}')" > "$T/b2.fh"
+[[ "$(./fih "$T/b2.fh" 2>&1)" == "fih: błąd w linii 65537: bloki zbyt głęboko zagnieżdżone (max 65536)" ]] && ok || bad "0.2: 65537 bloków"
+printf 'i = 0\nwhile i < 300000 {\n  calc(i)\n  print("ryba")\n  i += 1\n}\n' > "$T/loop.fh"
+cmp -s <(./fih "$T/loop.fh") <(python3 -c "import sys; sys.stdout.write(''.join(f'{i}\nryba\n' for i in range(300000)))") \
+    && ok || bad "0.2: duże wyjście z pętli"
+./fih build "$T/loop.fh" -o "$T/loopb" && cmp -s <("$T/loopb") <(./fih "$T/loop.fh") && ok || bad "0.2: build, duże wyjście"
+[[ "$(./fih "$T/loop.fh" 2>&1 >/dev/full)" == "fih: błąd: nie można zapisać wyjścia" ]] && ok || bad "0.2: pełny dysk (JIT)"
+[[ "$("$T/loopb" 2>&1 >/dev/full)" == "fih: błąd: nie można zapisać wyjścia" ]] && ok || bad "0.2: pełny dysk (build)"
+./fih "$T/loop.fh" >&- 2>/dev/null; [[ $? == 1 ]] && ok || bad "0.2: zamknięte stdout"
 python3 tests/output_numbers.py ./fih && ok || bad "wypisywanie liczb (tests/output_numbers.py)"
 python3 tests/division.py ./fih && ok || bad "dzielenie (tests/division.py)"
+python3 tests/division_const.py ./fih >/dev/null && ok || bad "dzielenie przez stałe (tests/division_const.py)"
 python3 tests/numbers.py ./fih && ok || bad "parsowanie liczb (tests/numbers.py)"
 head -c 100000 /dev/urandom > "$T/rand.fh"; ./fih "$T/rand.fh" >/dev/null 2>&1; code=$?; [[ $code -le 1 ]] && ok || bad "losowe bajty"
 

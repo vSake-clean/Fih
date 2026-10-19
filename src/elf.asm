@@ -7,7 +7,7 @@
 %include "fih.inc"
 default rel
 
-global write_elf
+global write_elf, write_file2
 extern write_fd, die_noline
 
 %define BASE      0x400000
@@ -85,27 +85,40 @@ section .text
 
 ; write_elf(rdi=ścieżka wyniku, rsi=dane, rdx=długość danych)
 write_elf:
+    push rdi
+    push rsi
+    push rdx
+    ; kopia szablonu z uzupełnionymi długościami
+    lea rsi, [tpl]
+    lea rdi, [hdr_buf]
+    mov ecx, TPL_SIZE
+    rep movsb
+    pop r8
+    lea rax, [r8 + TPL_SIZE]
+    lea rcx, [hdr_buf]
+    mov [rcx + filesz - tpl], rax
+    mov [rcx + memsz - tpl], rax
+    mov [rcx + datalen - tpl], r8
+    pop rcx
+    pop rdi
+    lea rsi, [hdr_buf]
+    mov edx, TPL_SIZE
+    jmp write_file2
+
+; write_file2(rdi=ścieżka, rsi=część 1, rdx=długość, rcx=część 2, r8=długość)
+; — zapisuje plik wykonywalny (rwxr-xr-x); przy błędzie usuwa niepełny plik
+write_file2:
     push rbx
     push r12
     push r13
     push r14
     push r15
+    push rbp
+    push rsi
+    push rdx
     mov r14, rdi            ; ścieżka
-    mov r12, rsi
-    mov r13, rdx
-
-    ; kopia szablonu z uzupełnionymi długościami
-    push rdi
-    lea rsi, [tpl]
-    lea rdi, [hdr_buf]
-    mov ecx, TPL_SIZE
-    rep movsb
-    pop rdi
-    lea rax, [r13 + TPL_SIZE]
-    lea rcx, [hdr_buf]
-    mov [rcx + filesz - tpl], rax
-    mov [rcx + memsz - tpl], rax
-    mov [rcx + datalen - tpl], r13
+    mov r12, rcx
+    mov r13, r8
 
     mov eax, SYS_OPEN
     mov esi, O_WRONLY | O_CREAT | O_TRUNC
@@ -137,8 +150,8 @@ write_elf:
     syscall
 
     mov rdi, rbx
-    lea rsi, [hdr_buf]
-    mov edx, TPL_SIZE
+    mov rsi, [rsp + 8]
+    mov rdx, [rsp]
     call write_fd
     test rax, rax
     jnz .write_fail
@@ -155,6 +168,8 @@ write_elf:
     test rax, rax
     js .write_fail_closed
 
+    add rsp, 16
+    pop rbp
     pop r15
     pop r14
     pop r13
