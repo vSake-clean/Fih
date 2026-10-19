@@ -1,0 +1,18 @@
+test,lang,value,unit,ms
+exec,Fih,12304807.3,linii/s,8.127
+exec,Fih (build),323091781.9,linii/s,0.310
+exec,C,7910710.0,linii/s,12.641
+exec,C++,6660026.2,linii/s,15.015
+exec,Python,40740.8,linii/s,2454.544
+source,Fih,12304807.3,linii/s,8.127
+source,Fih (build),7431513.4,linii/s,13.456
+source,C,2918.9,linii/s,34259.564
+source,C++,976.6,linii/s,102390.906
+source,Python,40740.8,linii/s,2454.544
+startup,Fih,2782.2,uruchomień/s,0.359
+startup,Fih (build),3286.2,uruchomień/s,0.304
+startup,C,1039.3,uruchomień/s,0.962
+startup,C++,435.9,uruchomień/s,2.294
+startup,Python,39.1,uruchomień/s,25.572
+exec1,Fih,8162419.3,linii/s,12.251
+exec1,C,7363605.7,linii/s,13.580

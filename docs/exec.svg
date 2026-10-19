@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360" viewBox="0 0 760 360">
+<style>
+text{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#24292f}
+.t{font-size:18px;font-weight:600}.s{font-size:12px;fill:#57606a}.v{font-size:13px;font-weight:600}
+.l{font-size:13px}.g{stroke:#d0d7de}.b{fill:#8c959f}.f{fill:#1f6feb}
+@media (prefers-color-scheme:dark){text{fill:#e6edf3}.s{fill:#8b949e}.g{stroke:#30363d}.b{fill:#6e7681}.f{fill:#4493f8}}
+</style>
+<text class="t" x="16" y="26">Wykonanie gotowego programu [linii/s]</text>
+<text class="s" x="16" y="46">100 000 linii print/calc; Fih (build), C, C++ już skompilowane · wyżej = lepiej · skala logarytmiczna</text>
+<line class="g" x1="16" x2="744" y1="296" y2="296"/>
+<rect class="f" x="56.8" y="143.9" width="64.0" height="152.1" rx="3"/>
+<text class="v" x="88.8" y="137.9" text-anchor="middle">12,3 mln</text>
+<text class="l" x="88.8" y="316" text-anchor="middle">Fih</text>
+<rect class="f" x="202.4" y="74.0" width="64.0" height="222.0" rx="3"/>
+<text class="v" x="234.4" y="68.0" text-anchor="middle">323,1 mln</text>
+<text class="l" x="234.4" y="316" text-anchor="middle">Fih (build)</text>
+<rect class="b" x="348.0" y="153.3" width="64.0" height="142.7" rx="3"/>
+<text class="v" x="380.0" y="147.3" text-anchor="middle">7,9 mln</text>
+<text class="l" x="380.0" y="316" text-anchor="middle">C</text>
+<rect class="b" x="493.6" y="157.0" width="64.0" height="139.0" rx="3"/>
+<text class="v" x="525.6" y="151.0" text-anchor="middle">6,7 mln</text>
+<text class="l" x="525.6" y="316" text-anchor="middle">C++</text>
+<rect class="b" x="639.2" y="266.0" width="64.0" height="30.0" rx="3"/>
+<text class="v" x="671.2" y="260.0" text-anchor="middle">40,7 tys.</text>
+<text class="l" x="671.2" y="316" text-anchor="middle">Python</text>
+</svg>

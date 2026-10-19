@@ -1,0 +1,45 @@
+{
+  "n": 100000,
+  "cpu": "Intel(R) Celeron(R) CPU 1005M @ 1.90GHz",
+  "charts": [
+    {
+      "id": "exec",
+      "title": "Wykonanie gotowego programu",
+      "unit": "linii/s",
+      "note": "program 100000 linii (print + calc); Fih (build), C, C++ już skompilowane",
+      "values": {
+        "Fih": 12304807.288112363,
+        "Fih (build)": 323091781.90151805,
+        "C": 7910710.019341958,
+        "C++": 6660026.167826798,
+        "Python": 40740.76738143032
+      }
+    },
+    {
+      "id": "source",
+      "title": "Od kodu źródłowego do wyniku",
+      "unit": "linii/s",
+      "note": "kompilacja (fih build / gcc -O2 / g++ -O2) + wykonanie",
+      "values": {
+        "Fih": 12304807.288112363,
+        "Fih (build)": 7431513.408382395,
+        "C": 2918.89295213118,
+        "C++": 976.6492347845356,
+        "Python": 40740.76738143032
+      }
+    },
+    {
+      "id": "startup",
+      "title": "Start programu (Hello World)",
+      "unit": "uruchomień/s",
+      "note": "ile razy na sekundę da się uruchomić Hello World",
+      "values": {
+        "Fih": 2782.1739147307403,
+        "Fih (build)": 3286.223683732743,
+        "C": 1039.3109042938459,
+        "C++": 435.8512281470237,
+        "Python": 39.10466836793537
+      }
+    }
+  ]
+}

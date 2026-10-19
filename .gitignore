@@ -1,0 +1,6 @@
+ZASADY.md
+build/
+/fih
+bench/out/
+examples/*
+!examples/*.fh

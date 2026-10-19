@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360" viewBox="0 0 760 360">
+<style>
+text{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#24292f}
+.t{font-size:18px;font-weight:600}.s{font-size:12px;fill:#57606a}.v{font-size:13px;font-weight:600}
+.l{font-size:13px}.g{stroke:#d0d7de}.b{fill:#8c959f}.f{fill:#1f6feb}
+@media (prefers-color-scheme:dark){text{fill:#e6edf3}.s{fill:#8b949e}.g{stroke:#30363d}.b{fill:#6e7681}.f{fill:#4493f8}}
+</style>
+<text class="t" x="16" y="26">Stabilność: zaliczone złośliwe przypadki [na 12]</text>
+<text class="s" x="16" y="46">brak awarii, poprawny kod wyjścia, brak cichej utraty danych i złych wyników · wyżej = lepiej</text>
+<line class="g" x1="16" x2="744" y1="296" y2="296"/>
+<rect class="f" x="32.2" y="88.9" width="48.5" height="207.1" rx="3"/>
+<text class="v" x="56.4" y="82.9" text-anchor="middle">12/12</text>
+<text class="l" x="56.4" y="316" text-anchor="middle">Fih</text>
+<rect class="f" x="113.1" y="88.9" width="48.5" height="207.1" rx="3"/>
+<text class="v" x="137.3" y="82.9" text-anchor="middle">12/12</text>
+<text class="l" x="137.3" y="316" text-anchor="middle">Fih (build)</text>
+<rect class="b" x="194.0" y="227.0" width="48.5" height="69.0" rx="3"/>
+<text class="v" x="218.2" y="221.0" text-anchor="middle">4/12</text>
+<text class="l" x="218.2" y="316" text-anchor="middle">C</text>
+<rect class="b" x="274.8" y="227.0" width="48.5" height="69.0" rx="3"/>
+<text class="v" x="299.1" y="221.0" text-anchor="middle">4/12</text>
+<text class="l" x="299.1" y="316" text-anchor="middle">C++</text>
+<rect class="b" x="355.7" y="140.6" width="48.5" height="155.4" rx="3"/>
+<text class="v" x="380.0" y="134.6" text-anchor="middle">9/12</text>
+<text class="l" x="380.0" y="316" text-anchor="middle">Python</text>
+<rect class="b" x="436.6" y="209.7" width="48.5" height="86.3" rx="3"/>
+<text class="v" x="460.9" y="203.7" text-anchor="middle">5/12</text>
+<text class="l" x="460.9" y="316" text-anchor="middle">Node.js</text>
+<rect class="b" x="517.5" y="106.1" width="48.5" height="189.9" rx="3"/>
+<text class="v" x="541.8" y="100.1" text-anchor="middle">11/12</text>
+<text class="l" x="541.8" y="316" text-anchor="middle">Perl</text>
+<rect class="b" x="598.4" y="157.9" width="48.5" height="138.1" rx="3"/>
+<text class="v" x="622.7" y="151.9" text-anchor="middle">8/12</text>
+<text class="l" x="622.7" y="316" text-anchor="middle">Lua</text>
+<rect class="b" x="679.3" y="106.1" width="48.5" height="189.9" rx="3"/>
+<text class="v" x="703.6" y="100.1" text-anchor="middle">11/12</text>
+<text class="l" x="703.6" y="316" text-anchor="middle">bc</text>
+</svg>

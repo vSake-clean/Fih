@@ -1,0 +1,9 @@
+step,label,ms,lines_per_s
+1,Wersja 0.1,479.7,2084636
+2,SSE2 + szybkie dzielenie,276.3,3619254
+3,Inline spacji + tablica nazw,239.1,4182350
+4,SWAR cyfr,222.7,4490346
+5,Spacje bez skoków,210.8,4743833
+6,Liczby + 1 przejście calc,152.1,6574622
+7,Mniej skoków (frontend),113.7,8795075
+8,Wszystkie rdzenie,83.0,12048193

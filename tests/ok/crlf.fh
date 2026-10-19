@@ -1,0 +1,2 @@
+print("windows")
+calc("1+1")

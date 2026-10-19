@@ -1,0 +1,7 @@
+print("2 + 3")
+print("")
+print("  spacje zostają  ")
+print("cudzysłów: \" backslash: \\ tab:\t| nowa linia:\nkoniec")
+print("zażółć gęślą jaźń 🐟")
+	print( "spacje wokół" )   # komentarz
+print("# to nie komentarz")

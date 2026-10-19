@@ -1,0 +1,109 @@
+case,lang,ok,kod
+deep,Fih,1,1
+deep,Fih (build),1,1
+deep,C,0,2000
+deep,C++,0,2000
+deep,Python,1,1
+deep,Node.js,1,1
+deep,Perl,1,0
+deep,Lua,1,1
+deep,bc,1,0
+deep2m,Fih,1,1
+deep2m,Fih (build),1,1
+deep2m,C,0,2000
+deep2m,C++,0,3000
+deep2m,Python,1,1
+deep2m,Node.js,1,1
+deep2m,Perl,1,0
+deep2m,Lua,1,1
+deep2m,bc,1,0
+stack,Fih,1,1
+stack,Fih (build),1,1
+stack,C,0,2000
+stack,C++,0,2000
+stack,Python,0,1011
+stack,Node.js,0,1011
+stack,Perl,1,0
+stack,Lua,1,1
+stack,bc,1,0
+div,Fih,1,1
+div,Fih (build),1,1
+div,C,0,1008
+div,C++,0,1008
+div,Python,1,1
+div,Node.js,0,0
+div,Perl,1,255
+div,Lua,1,1
+div,bc,0,0
+full,Fih,1,1
+full,Fih (build),1,1
+full,C,0,0
+full,C++,0,0
+full,Python,0,0
+full,Node.js,0,0
+full,Perl,1,1
+full,Lua,0,0
+full,bc,1,1
+closed,Fih,1,1
+closed,Fih (build),1,1
+closed,C,0,0
+closed,C++,0,0
+closed,Python,0,0
+closed,Node.js,0,0
+closed,Perl,1,1
+closed,Lua,0,0
+closed,bc,1,1
+garbage,Fih,1,1
+garbage,Fih (build),1,1
+garbage,C,1,1
+garbage,C++,1,1
+garbage,Python,1,1
+garbage,Node.js,1,1
+garbage,Perl,1,255
+garbage,Lua,1,1
+garbage,bc,1,0
+bignum,Fih,1,1
+bignum,Fih (build),1,1
+bignum,C,1,0
+bignum,C++,1,0
+bignum,Python,1,0
+bignum,Node.js,1,0
+bignum,Perl,1,255
+bignum,Lua,1,0
+bignum,bc,1,0
+longline,Fih,1,0
+longline,Fih (build),1,0
+longline,C,1,0
+longline,C++,1,0
+longline,Python,1,0
+longline,Node.js,1,0
+longline,Perl,1,0
+longline,Lua,1,0
+longline,bc,1,0
+overflow,Fih,1,1
+overflow,Fih (build),1,1
+overflow,C,0,4000
+overflow,C++,0,4000
+overflow,Python,1,0
+overflow,Node.js,0,4000
+overflow,Perl,1,0
+overflow,Lua,0,4000
+overflow,bc,1,0
+overflow3,Fih,1,1
+overflow3,Fih (build),1,1
+overflow3,C,0,4000
+overflow3,C++,0,4000
+overflow3,Python,1,0
+overflow3,Node.js,0,4000
+overflow3,Perl,0,4000
+overflow3,Lua,0,4000
+overflow3,bc,1,0
+memlimit,Fih,1,0
+memlimit,Fih (build),1,0
+memlimit,C,1,0
+memlimit,C++,1,0
+memlimit,Python,1,0
+memlimit,Node.js,0,1005
+memlimit,Perl,1,0
+memlimit,Lua,1,0
+memlimit,bc,1,0

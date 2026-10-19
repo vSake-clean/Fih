@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="360" viewBox="0 0 760 360">
+<style>
+text{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#24292f}
+.t{font-size:18px;font-weight:600}.s{font-size:12px;fill:#57606a}.v{font-size:13px;font-weight:600}
+.l{font-size:13px}.g{stroke:#d0d7de}.b{fill:#8c959f}.f{fill:#1f6feb}
+@media (prefers-color-scheme:dark){text{fill:#e6edf3}.s{fill:#8b949e}.g{stroke:#30363d}.b{fill:#6e7681}.f{fill:#4493f8}}
+</style>
+<text class="t" x="16" y="26">Wykonanie na jednym rdzeniu [linii/s]</text>
+<text class="s" x="16" y="46">taskset -c 0: interpretowany Fih vs skompilowane C · wyżej = lepiej</text>
+<line class="g" x1="16" x2="744" y1="296" y2="296"/>
+<rect class="f" x="166.0" y="94.3" width="64.0" height="201.7" rx="3"/>
+<text class="v" x="198.0" y="88.3" text-anchor="middle">8,2 mln</text>
+<text class="l" x="198.0" y="316" text-anchor="middle">Fih</text>
+<rect class="b" x="530.0" y="114.0" width="64.0" height="182.0" rx="3"/>
+<text class="v" x="562.0" y="108.0" text-anchor="middle">7,4 mln</text>
+<text class="l" x="562.0" y="316" text-anchor="middle">C</text>
+</svg>
