@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: make && make test
+      - name: sprawdzenie wersji
+        run: test "$(./fih --version)" = "fih ${GITHUB_REF_NAME#v}"
+      - name: paczka
+        run: |
+          strip -o fih-linux-x86_64 fih
+          tar czf "fih-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" fih-linux-x86_64 README.md SPEC.md LICENSE
+          sha256sum fih-linux-x86_64 "fih-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" > SHA256SUMS
+      - name: wydanie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "Fih ${GITHUB_REF_NAME#v}" --notes-file notes.md \
+            fih-linux-x86_64 "fih-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" SHA256SUMS

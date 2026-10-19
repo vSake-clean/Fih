@@ -47,6 +47,13 @@ check "katalog"                 1 ./fih tests
 check "build bez .fh"           1 ./fih build README.md
 check "build nadpisałby źródło" 1 ./fih build tests/ok/calc.fh -o tests/ok/calc.fh
 check "build do złego katalogu" 1 ./fih build tests/ok/calc.fh -o "$T/brak/x"
+check "--help"                  0 ./fih --help
+check "-h"                      0 ./fih -h
+check "--version"               0 ./fih --version
+check "--version z argumentem"  2 ./fih --version x
+check "--help na pełny dysk"    1 sh -c './fih --help > /dev/full'
+[[ "$(./fih --version)" == "fih $(sed -n 's/^%define FIH_VERSION "\(.*\)"/\1/p' src/fih.inc)" ]] && ok || bad "--version: treść"
+[[ "$(./fih --help | head -1)" == Fih* && -z "$(./fih --help 2>&1 >/dev/null)" ]] && ok || bad "--help: na stdout"
 cp tests/ok/calc.fh "$T/prog.fh"
 ./fih build "$T/prog.fh" && [[ -x "$T/prog" ]] && ok || bad "build: domyślna nazwa wyniku"
 echo 'stary' > "$T/prog" && chmod 600 "$T/prog" && ./fih build "$T/prog.fh" && [[ -x "$T/prog" && "$("$T/prog" | head -1)" == 4 ]] \

@@ -1,6 +1,8 @@
 ; main.asm — punkt wejścia
 ;   fih program.fh                       interpretacja (od razu wykonuje)
 ;   fih build program.fh [-o wynik]      kompilacja do pliku wykonywalnego
+;   fih --help | -h                      opis użycia (stdout, kod 0)
+;   fih --version                        wersja (stdout, kod 0)
 %include "fih.inc"
 default rel
 
@@ -21,7 +23,19 @@ section .rodata
 msg_usage:      db "użycie:", 10
                 db "  fih program.fh                    uruchamia program", 10
                 db "  fih build program.fh [-o wynik]   kompiluje do pliku wykonywalnego", 10
+                db "  fih --help                        ten opis", 10
+                db "  fih --version                     wersja", 10
 msg_usage_len   equ $ - msg_usage
+msg_help:       db "Fih ", FIH_VERSION, " — język programowania w assembly x86-64", 10, 10
+msg_help_usage_len equ $ - msg_help
+                db 10, "Instrukcje (jedna na linię, komentarze od #):", 10
+                db '  print("napis")      wypisuje napis; sekwencje \n \t \\ \"', 10
+                db '  calc("wyrażenie")   liczy wyrażenie całkowite 64-bit: + - * / % ( )', 10, 10
+                db "Kody wyjścia: 0 sukces, 1 błąd w programie, 2 złe argumenty.", 10
+                db "Specyfikacja: https://github.com/vSake-clean/Fih/blob/main/SPEC.md", 10
+msg_help_len    equ $ - msg_help
+msg_version:    db "fih ", FIH_VERSION, 10
+msg_version_len equ $ - msg_version
 msg_open:       db "nie można otworzyć pliku"
 msg_open_len    equ $ - msg_open
 msg_read:       db "nie można wczytać pliku"
@@ -36,6 +50,9 @@ msg_long:       db "za długa ścieżka"
 msg_long_len    equ $ - msg_long
 str_build:      db "build", 0
 str_o:          db "-o", 0
+str_help:       db "--help", 0
+str_h:          db "-h", 0
+str_version:    db "--version", 0
 
 section .text
 _start:
@@ -61,6 +78,21 @@ _start:
     mov rbx, [rsp]          ; argc
     cmp rbx, 2
     jb .usage
+    cmp rbx, 2
+    jne .not_flag
+    mov rdi, [rsp+16]
+    lea rsi, [str_help]
+    call streq
+    je .help
+    mov rdi, [rsp+16]
+    lea rsi, [str_h]
+    call streq
+    je .help
+    mov rdi, [rsp+16]
+    lea rsi, [str_version]
+    call streq
+    je .version
+.not_flag:
     mov rdi, [rsp+16]       ; argv[1]
     lea rsi, [str_build]
     call streq
@@ -126,6 +158,28 @@ _start:
     mov eax, SYS_EXIT
     xor edi, edi
     syscall
+
+; opis użycia: nagłówek + linie "fih ..." z msg_usage + reszta msg_help
+.help:
+    mov edi, STDOUT
+    lea rsi, [msg_help]
+    mov edx, msg_help_usage_len
+    call write_all
+    mov edi, STDOUT
+    lea rsi, [msg_usage]
+    mov edx, msg_usage_len
+    call write_all
+    mov edi, STDOUT
+    lea rsi, [msg_help + msg_help_usage_len]
+    mov edx, msg_help_len - msg_help_usage_len
+    call write_all
+    jmp .exit_ok
+.version:
+    mov edi, STDOUT
+    lea rsi, [msg_version]
+    mov edx, msg_version_len
+    call write_all
+    jmp .exit_ok
 
 .usage:
     mov edi, STDERR

@@ -1,5 +1,7 @@
 ; fih.inc — wspólne stałe i makra interpretera Fih
 
+%define FIH_VERSION "0.1.1"
+
 %define SYS_READ    0
 %define SYS_WRITE   1
 %define SYS_OPEN    2

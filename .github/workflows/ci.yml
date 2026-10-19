@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: make
+      - run: make test
+      - name: fuzz (krótki)
+        run: |
+          python3 tests/fuzz/fuzz.py 1000
+          python3 tests/fuzz/par_fuzz.py 3
+          ./tests/truncate.sh
+          python3 tests/fuzz/gcc_oracle.py 2000
+          python3 tests/fuzz/crash_fuzz.py 500

@@ -1,9 +1,36 @@
 # Fih 🐟
 
-Język programowania z interpreterem napisanym w czystym assembly x86-64 (NASM),
-bez libc — tylko syscalle Linuksa.
+[![CI](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml/badge.svg)](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml)
+
+Język programowania z interpreterem i kompilatorem napisanymi w czystym assembly
+x86-64 (NASM), bez libc — tylko syscalle Linuksa.
+
+**Fih 0.1 to celowo kalkulator, a nie język ogólnego przeznaczenia.** Ma dwie
+instrukcje: `print` (wypisuje napis) i `calc` (liczy wyrażenie całkowite).
+Nie ma jeszcze zmiennych, `if`, pętli ani funkcji. Wersja 0.1 skupia się na
+fundamencie: dokładnej arytmetyce, odporności na złośliwe dane i wydajności.
+Zmienne, `if` i `while` przyjdą w wersji 0.2 ([ROADMAP.md](ROADMAP.md)).
+
+| Dokument | Zawartość |
+|---|---|
+| [SPEC.md](SPEC.md) | pełna specyfikacja języka: gramatyka, semantyka, błędy, limity |
+| [ROADMAP.md](ROADMAP.md) | plan: składnia wersji 0.2 i dalej |
+| [CHANGELOG.md](CHANGELOG.md) | zmiany w kolejnych wersjach |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | zgłaszanie błędów, testy, styl kodu, wersjonowanie |
+
+## Instalacja
+
+Gotowa binarka (Linux x86-64) jest w [wydaniach](https://github.com/vSake-clean/Fih/releases/latest):
+
+```sh
+curl -LO https://github.com/vSake-clean/Fih/releases/latest/download/fih-linux-x86_64
+chmod +x fih-linux-x86_64 && sudo mv fih-linux-x86_64 /usr/local/bin/fih
+fih --version
+```
 
 ## Budowanie
+
+Wymagania: Linux x86-64, NASM 2.15+, GNU ld.
 
 ```sh
 sudo apt install nasm
@@ -23,6 +50,8 @@ Fih ma dwa tryby:
 ./fih program.fh                    # interpretacja: uruchamia od razu, jak Python
 ./fih build program.fh              # kompilacja: tworzy plik wykonywalny ./program
 ./fih build program.fh -o nazwa     # ... o wybranej nazwie
+./fih --help                        # opis użycia
+./fih --version                     # wersja
 ```
 
 **Interpretacja** czyta plik i wykonuje go linia po linii. Gdy w linii jest błąd,
@@ -86,7 +115,7 @@ Fih nigdy nie powinien skończyć się awarią. Każda sytuacja kończy się kom
 - pełny dysk, `/dev/full`, zamknięty potok; przy `build` niepełny plik wynikowy jest usuwany;
 - brak pamięci albo limit procesów: tryb wielordzeniowy przechodzi wtedy na wykonanie po kolei.
 
-Sprawdzają to `make test` (98 testów w obu trybach) i `make fuzz`:
+Sprawdzają to `make test` (105 testów, programy w obu trybach) i `make fuzz`:
 
 - `tests/fuzz/fuzz.py`: losowe programy porównane z niezależną implementacją w Pythonie
   (wyjście, komunikat błędu, numer linii, kod wyjścia);

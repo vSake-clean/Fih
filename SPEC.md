@@ -1,4 +1,4 @@
-# Specyfikacja języka Fih (wersja 0.1)
+# Specyfikacja języka Fih (wersja 0.1.1)
 
 Ten plik opisuje dokładnie, jak działa język Fih i jego implementacja `fih`.
 Jest napisany tak, żeby człowiek albo model AI mógł go przeczytać i znać
@@ -175,10 +175,11 @@ wynikiem albo komunikatem `fih: błąd...`.
 ./fih build program.fh            # kompilacja do ./program
 ./fih build program.fh -o nazwa   # kompilacja do ./nazwa
 echo 'calc("6*7")' | ./fih /dev/stdin
+./fih --help                      # opis użycia na stdout (także -h)
+./fih --version                   # wypisuje: fih 0.1.1
 ```
 
-Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (wypisuje sposób użycia).
-Nie ma opcji `--help` ani `--version`.
+Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na stderr).
 
 ### Interpretacja
 
@@ -216,6 +217,8 @@ wykonywany po kolei.
 
 Fih 0.1 nie ma: zmiennych, typów innych niż liczba całkowita i napis, porównań
 i operatorów logicznych, `if`/`else`, pętli, funkcji, tablic, operacji na
-napisach, wejścia (stdin, argumenty), importu innych plików, komentarzy
-blokowych, opcji `--help`/`--version`. Program w Fih to ciąg niezależnych
-instrukcji `print` i `calc` wykonywanych od góry do dołu.
+napisach, wejścia (stdin, argumenty), importu innych plików i komentarzy
+blokowych. Program w Fih to ciąg niezależnych instrukcji `print` i `calc`
+wykonywanych od góry do dołu.
+
+Zmienne, `if`/`else` i `while` są zaplanowane na wersję 0.2 ([ROADMAP.md](ROADMAP.md)).
