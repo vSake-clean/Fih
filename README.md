@@ -44,6 +44,9 @@ Program można też podać przez potok: `echo 'calc("6*7")' | ./fih /dev/stdin`.
 
 ## Język (wersja 0.1)
 
+Pełna specyfikacja (gramatyka, semantyka, wszystkie błędy, limity) jest w
+[SPEC.md](SPEC.md). Ten plik można dać modelowi AI do przeczytania.
+
 Jedna instrukcja na linię, komentarze od `#` do końca linii.
 
 ```
