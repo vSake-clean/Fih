@@ -101,22 +101,6 @@ dokładny albo zgłoszony jako błąd:
 
 ![Stabilność](docs/stability.svg)
 
-| | Fih | Fih (build) | C | C++ | Python | Node.js | Perl | Lua | bc |
-|---|---|---|---|---|---|---|---|---|---|
-| 200 tys. nawiasów | ✔ | ✔ | ✘ awaria kompilatora | ✘ awaria kompilatora | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 2 mln nawiasów | ✔ | ✔ | ✘ awaria kompilatora | ✘ zawieszenie | ✔ | ✔ | ✔ | ✔ | ✔ |
-| mały stos + 3000 nawiasów | ✔ | ✔ | ✘ awaria kompilatora | ✘ awaria kompilatora | ✘ sygnał 11 | ✘ sygnał 11 | ✔ | ✔ | ✔ |
-| dzielenie przez zero | ✔ | ✔ | ✘ sygnał 8 | ✘ sygnał 8 | ✔ | ✘ kod 0 | ✔ | ✔ | ✘ kod 0 |
-| zapis na pełny dysk | ✔ | ✔ | ✘ kod 0 | ✘ kod 0 | ✘ kod 0 | ✘ kod 0 | ✔ | ✘ kod 0 | ✔ |
-| zamknięte stdout | ✔ | ✔ | ✘ kod 0 | ✘ kod 0 | ✘ kod 0 | ✘ kod 0 | ✔ | ✘ kod 0 | ✔ |
-| losowe bajty jako kod | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| liczba o 500 cyfrach | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| napis 20 MB | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| `9223372036854775807 + 1` | ✔ | ✔ | ✘ zły wynik | ✘ zły wynik | ✔ | ✘ zły wynik | ✔ | ✘ zły wynik | ✔ |
-| `9223372036854775807 * 3` | ✔ | ✔ | ✘ zły wynik | ✘ zły wynik | ✔ | ✘ zły wynik | ✘ zły wynik | ✘ zły wynik | ✔ |
-| limit pamięci 300 MB | ✔ | ✔ | ✔ | ✔ | ✔ | ✘ sygnał 5 | ✔ | ✔ | ✔ |
-| **razem** | **12/12** | **12/12** | 4/12 | 4/12 | 9/12 | 5/12 | 11/12 | 8/12 | 11/12 |
-
 ## Wydajność
 
 Program testowy ma 100 000 linii `print`/`calc`. Pomiar na Celeronie 1005M, im więcej, tym lepiej:
