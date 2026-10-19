@@ -20,10 +20,15 @@ make test       # testy w obu trybach (interpretacja i build)
 make fuzz       # długi fuzzing
 ```
 
+Wzorcowa implementacja języka w Pythonie to `tests/fuzz/oracle.py`. Fuzzery
+porównują z nią `fih` (wyjście, komunikat, numer linii, kod wyjścia, oba tryby).
+Zmiana w języku wymaga tej samej zmiany w wyroczni.
+
 Każda zmiana zachowania potrzebuje testu:
 
 - `tests/ok/X.fh` + `X.out`: oczekiwane stdout, kod 0,
-- `tests/err/X.fh` + `X.err`: oczekiwany komunikat błędu, kod 1,
+- `tests/err/X.fh` + `X.err`: oczekiwany komunikat błędu, kod 1; przy błędzie
+  w trakcie działania opcjonalnie `X.out` z wyjściem przed błędem,
 - pozostałe przypadki w `tests/run.sh`.
 
 `tests/run.sh` uruchamia każdy plik w obu trybach. Wynik musi być identyczny.

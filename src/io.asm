@@ -124,6 +124,15 @@ set_buf:
 ; w pamięci. Bufor jest od razu rezerwowany (bez przydziału stron) i wyrównany
 ; do 2 MB, żeby jądro mogło użyć dużych stron: mniej błędów stron przy zapisie.
 out_to_memory:
+    cmp rdi, OUTSZ
+    jae .big
+    ; mały program: wystarczy stały bufor (gdyby jednak zabrakło miejsca,
+    ; out_room przeniesie wyjście do pamięci z mmap)
+    lea rdi, [outbuf]
+    mov esi, OUTSZ
+    call set_buf
+    jmp .mode
+.big:
     lea rsi, [rdi + OUTSZ + HUGE - 1]
     and rsi, -HUGE
     push rsi
@@ -141,13 +150,17 @@ out_to_memory:
     and rax, -HUGE
     mov rdi, rax
     mov rsi, [rsp]
+    cmp rsi, 2 * HUGE           ; duże strony tylko dla dużego wyjścia
+    jb .no_huge
     mov eax, SYS_MADVISE        ; błąd madvise nie przeszkadza
     mov edx, MADV_HUGEPAGE
     push rdi
     syscall
     pop rdi
+.no_huge:
     pop rsi
     call set_buf
+.mode:
     xor eax, eax
     mov [outlen], rax
     mov [nseg], rax
@@ -205,6 +218,9 @@ out_room:
     add rdx, 4095
     and rdx, -4096
     push rdx
+    lea rax, [outbuf]
+    cmp [obuf], rax
+    je .from_static
     mov eax, SYS_MREMAP
     mov rdi, [obuf]
     mov rsi, [ocap]
@@ -214,6 +230,30 @@ out_room:
     cmp rax, -4095
     jae out_nomem
     mov rdi, rax
+    call set_buf
+    pop rsi
+    pop rdi
+    ret
+.from_static:                   ; ze stałego bufora: nowa pamięć i kopia
+    mov eax, SYS_MMAP
+    xor edi, edi
+    mov rsi, rdx
+    mov edx, PROT_READ | PROT_WRITE
+    mov r10d, MAP_PRIVATE | MAP_ANONYMOUS
+    mov r8, -1
+    xor r9d, r9d
+    syscall
+    pop rsi
+    cmp rax, -4095
+    jae out_nomem
+    mov rdi, rax
+    push rsi
+    push rdi
+    lea rsi, [outbuf]
+    mov rcx, [outlen]
+    rep movsb
+    pop rdi
+    pop rsi
     call set_buf
     pop rsi
     pop rdi

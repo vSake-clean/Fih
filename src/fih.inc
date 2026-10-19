@@ -1,6 +1,6 @@
 ; fih.inc — wspólne stałe i makra interpretera Fih
 
-%define FIH_VERSION "0.1.1"
+%define FIH_VERSION "0.2.0"
 
 ; obszar danych programów 0.2 (rejestr r15 w wygenerowanym kodzie i w rt.asm)
 %define D_OUTLEN    0           ; zajęta część bufora wyjścia

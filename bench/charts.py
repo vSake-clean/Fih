@@ -2,6 +2,7 @@
 """Rysuje wykresy kolumnowe SVG do docs/ z bench/results.csv i bench/stability.csv.
 Zasada: im wyższa kolumna, tym lepiej."""
 import csv, math, os
+from html import escape
 from collections import defaultdict
 
 os.makedirs("docs", exist_ok=True)
@@ -34,8 +35,8 @@ def chart(name, title, sub, data, log, label=fmt, vmax=None):
         hi = vmax or max(v for _, v in data) * 1.15
         y = lambda v: ph * v / hi
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">', STYLE,
-           f'<text class="t" x="{LEFT}" y="26">{title}</text>',
-           f'<text class="s" x="{LEFT}" y="46">{sub}</text>']
+           f'<text class="t" x="{LEFT}" y="26">{escape(title)}</text>',
+           f'<text class="s" x="{LEFT}" y="46">{escape(sub)}</text>']
     base = TOP + ph
     out.append(f'<line class="g" x1="{LEFT}" x2="{W - RIGHT}" y1="{base}" y2="{base}"/>')
     for i, (lang, v) in enumerate(data):
@@ -44,7 +45,7 @@ def chart(name, title, sub, data, log, label=fmt, vmax=None):
         cls = "f" if lang.startswith("Fih") else "b"
         out.append(f'<rect class="{cls}" x="{cx - bw / 2:.1f}" y="{base - h:.1f}" width="{bw:.1f}" height="{h:.1f}" rx="3"/>')
         out.append(f'<text class="v" x="{cx:.1f}" y="{base - h - 6:.1f}" text-anchor="middle">{label(v)}</text>')
-        out.append(f'<text class="l" x="{cx:.1f}" y="{base + 20}" text-anchor="middle">{lang}</text>')
+        out.append(f'<text class="l" x="{cx:.1f}" y="{base + 20}" text-anchor="middle">{escape(lang)}</text>')
     out.append("</svg>")
     open(f"docs/{name}.svg", "w").write("\n".join(out) + "\n")
 
@@ -60,6 +61,8 @@ chart("source", "Od kodu źródłowego do wyniku [linii/s]",
       f"kompilacja (fih build / gcc -O2 / g++ -O2) + wykonanie · {logsub}", rows["source"], True)
 chart("startup", "Hello World [uruchomień/s]", f"ile razy na sekundę da się uruchomić program · {logsub}",
       rows["startup"], True)
+chart("loops", "Pętle: liczby pierwsze [liczb/s]",
+      f"liczby < 300 000 sprawdzane dzieleniem próbnym (while, if, %, break) · {logsub}", rows["loops"], True)
 chart("exec1", "Wykonanie na jednym rdzeniu [linii/s]",
       "taskset -c 0: interpretowany Fih vs skompilowane C · wyżej = lepiej", rows["exec1"], False)
 

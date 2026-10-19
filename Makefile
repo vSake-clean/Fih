@@ -18,6 +18,7 @@ test: fih
 	./tests/run.sh
 
 fuzz: fih
+	python3 tests/fuzz/fuzz2.py 5000
 	python3 tests/fuzz/fuzz.py 5000
 	python3 tests/fuzz/par_fuzz.py 10
 	./tests/truncate.sh

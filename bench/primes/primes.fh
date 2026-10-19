@@ -1,0 +1,22 @@
+# liczby pierwsze mniejsze od 300000: ile ich jest i jaka jest ich suma
+n = 2
+ile = 0
+suma = 0
+while n < 300000 {
+    d = 2
+    pierwsza = 1
+    while d * d <= n {
+        if n % d == 0 {
+            pierwsza = 0
+            break
+        }
+        d += 1
+    }
+    if pierwsza {
+        ile += 1
+        suma += n
+    }
+    n += 1
+}
+calc(ile)
+calc(suma)

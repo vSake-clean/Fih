@@ -2,19 +2,37 @@
 
 [![CI](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml/badge.svg)](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml)
 
-Język programowania z interpreterem i kompilatorem napisanymi w czystym assembly
-x86-64 (NASM), bez libc — tylko syscalle Linuksa.
+Mały język programowania z kompilatorem napisanym w czystym assembly x86-64
+(NASM), bez libc — tylko syscalle Linuksa. Program jest tłumaczony na kod
+maszynowy: uruchamiany od razu z pamięci (JIT) albo zapisywany jako
+samodzielny plik ELF.
 
-**Fih 0.1 to celowo kalkulator, a nie język ogólnego przeznaczenia.** Ma dwie
-instrukcje: `print` (wypisuje napis) i `calc` (liczy wyrażenie całkowite).
-Nie ma jeszcze zmiennych, `if`, pętli ani funkcji. Wersja 0.1 skupia się na
-fundamencie: dokładnej arytmetyce, odporności na złośliwe dane i wydajności.
-Zmienne, `if` i `while` przyjdą w wersji 0.2 ([ROADMAP.md](ROADMAP.md)).
+```
+# FizzBuzz w Fih
+i = 1
+while i <= 15 {
+    if i % 15 == 0 {
+        print("FizzBuzz")
+    } else if i % 3 == 0 {
+        print("Fizz")
+    } else if i % 5 == 0 {
+        print("Buzz")
+    } else {
+        calc(i)
+    }
+    i += 1
+}
+```
+
+**Fih 0.2** ma zmienne całkowite, `if`/`else if`/`else`, pętlę `while`,
+`break`/`continue`, porównania (także łańcuchy `0 < x < 10`), `and`/`or`/`not`
+i wypisywanie (`print`, `calc`). Nie ma jeszcze funkcji, tablic, napisów
+w zmiennych ani wczytywania danych ([ROADMAP.md](ROADMAP.md)).
 
 | Dokument | Zawartość |
 |---|---|
 | [SPEC.md](SPEC.md) | pełna specyfikacja języka: gramatyka, semantyka, błędy, limity |
-| [ROADMAP.md](ROADMAP.md) | plan: składnia wersji 0.2 i dalej |
+| [ROADMAP.md](ROADMAP.md) | plan kolejnych wersji |
 | [CHANGELOG.md](CHANGELOG.md) | zmiany w kolejnych wersjach |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | zgłaszanie błędów, testy, styl kodu, wersjonowanie |
 
@@ -36,7 +54,7 @@ Wymagania: Linux x86-64, NASM 2.15+, GNU ld.
 sudo apt install nasm
 make            # tworzy ./fih
 make test       # testy (oba tryby, przypadki graniczne)
-make fuzz       # losowe programy (małe i > 512 KB) porównane z wzorcową implementacją
+make fuzz       # losowe programy porównane z wzorcową implementacją (tests/fuzz/oracle.py)
 make bench      # benchmark vs C, C++, Python (wymaga gcc, g++, python3, hyperfine)
                 # FULL=1 make bench mierzy też od nowa kompilację C/C++ (~10 min)
 make charts     # wykresy SVG w docs/ z wyników bench/*.csv
@@ -44,81 +62,74 @@ make charts     # wykresy SVG w docs/ z wyników bench/*.csv
 
 ## Użycie
 
-Fih ma dwa tryby:
-
 ```sh
-./fih program.fh                    # interpretacja: uruchamia od razu, jak Python
+./fih program.fh                    # uruchomienie: kompilacja w pamięci (JIT) i start
 ./fih build program.fh              # kompilacja: tworzy plik wykonywalny ./program
 ./fih build program.fh -o nazwa     # ... o wybranej nazwie
 ./fih --help                        # opis użycia
 ./fih --version                     # wersja
 ```
 
-**Interpretacja** czyta plik i wykonuje go linia po linii. Gdy w linii jest błąd,
-wcześniejsze linie zdążą się wykonać.
+Cały plik jest sprawdzany przed uruchomieniem: przy błędzie składni program nie
+wypisuje niczego, a `build` nie tworzy pliku. Błędy w trakcie (dzielenie przez
+zero, przepełnienie) zgłasza działający program — po wypisaniu tego, co zdążył
+policzyć. Oba tryby dają identyczne wyjście, komunikaty i kody wyjścia.
 
-**Kompilacja** sprawdza i wylicza cały program przed uruchomieniem, a potem zapisuje
-gotowy plik ELF x86-64: statyczny, bez bibliotek, uruchamiany bez Fih. Jeśli w
-programie jest błąd, kompilacja kończy się komunikatem i plik wynikowy nie powstaje.
-Wyrażenia `calc` są liczone już podczas kompilacji, więc skompilowany program
-tylko wypisuje gotowy wynik.
+`fih build` tworzy statyczny plik ELF x86-64 bez bibliotek, uruchamiany bez Fih.
+Programy, które mają tylko `print` i `calc` ze stałymi, są wyliczane od razu
+(build zapisuje gotowy wynik), a duże (od 512 KB) — na wszystkich rdzeniach.
 
-Duże programy (od 512 KB) są wykonywane na wszystkich rdzeniach. Plik jest dzielony na
-kawałki na granicach linii, każdy kawałek liczy osobny proces, a wyniki są wypisywane
-po kolei. Wyjście i komunikaty błędów (z numerem linii) są dokładnie takie jak przy
-wykonaniu po kolei. Gdy proces potomny trafi na błąd albo nie da się go uruchomić
-(np. limit procesów lub pamięci), reszta programu jest wykonywana po kolei.
+Program można też podać przez potok: `echo 'calc(6*7)' | ./fih /dev/stdin`.
 
-Program można też podać przez potok: `echo 'calc("6*7")' | ./fih /dev/stdin`.
-
-## Język (wersja 0.1)
+## Język (wersja 0.2)
 
 Pełna specyfikacja (gramatyka, semantyka, wszystkie błędy, limity) jest w
 [SPEC.md](SPEC.md). Ten plik można dać modelowi AI do przeczytania.
 
 Jedna instrukcja na linię, komentarze od `#` do końca linii.
 
-```
-# komentarz
-print("2 + 3")        # wypisuje dosłownie: 2 + 3
-calc("2 + 2")         # liczy i wypisuje: 4
-calc("(1 + 2) * -3")  # -9
-```
+| Instrukcja | Działanie |
+|---|---|
+| `print("...")` | wypisuje napis i znak nowej linii; sekwencje `\n` `\t` `\\` `\"` |
+| `calc(wyrażenie)` | wypisuje wartość wyrażenia (także `calc("wyrażenie")`, jak w 0.1) |
+| `x = wyrażenie` | przypisanie; także `+=` `-=` `*=` `/=` `%=` |
+| `if w {` … `} else if w {` … `} else {` … `}` | warunek (prawda = różne od 0) |
+| `while w {` … `}` | pętla; `break` i `continue` |
 
-| Instrukcja      | Działanie |
-|-----------------|-----------|
-| `print("...")`  | wypisuje napis i znak nowej linii; sekwencje `\n` `\t` `\\` `\"` |
-| `calc("...")`   | liczy wyrażenie całkowite 64-bit i wypisuje wynik |
-
-Wyrażenia w `calc`: liczby całkowite, `+ - * / %`, nawiasy, unarny `-` i `+`,
-spacje i tabulatory dowolnie.
-Priorytety jak w matematyce. `/` obcina w stronę zera, `%` ma znak dzielnej
-(jak w C). Przepełnienie (wynik spoza zakresu 64-bitowego, np.
-`9223372036854775807 + 1`) to błąd, a nie cicho zła liczba. Dzielenie przez
-zero też kończy program błędem z numerem linii:
+Wyrażenia: liczby całkowite 64-bit, zmienne, `+ - * / %`, nawiasy, unarny `-`,
+porównania `== != < <= > >=` (wynik 1 albo 0, łańcuchy jak w Pythonie:
+`0 < x < 10`), `and`, `or`, `not` (liczone tylko w razie potrzeby).
+`/` obcina w stronę zera, `%` ma znak dzielnej (jak w C). Przepełnienie (np.
+`9223372036854775807 + 1`) i dzielenie przez zero to błędy z numerem linii,
+a nie cicho zła liczba:
 
 ```
 fih: błąd w linii 2: dzielenie przez zero
 ```
 
-Bardzo głęboko zagnieżdżone wyrażenia (powyżej limitu dopasowanego do `ulimit -s`)
-kończą się błędem `wyrażenie zbyt głęboko zagnieżdżone`, a nie awarią.
+Zmienna użyta przed przypisaniem to błąd: `nieznana zmienna 'x'` (przed
+uruchomieniem) albo `zmienna 'x' nie ma jeszcze wartości` (gdy przypisanie się
+nie wykonało).
 
 ## Stabilność
 
 Fih nigdy nie powinien skończyć się awarią. Każda sytuacja kończy się komunikatem `fih: błąd...` i kodem 1:
 
-- błędy w programie (z numerem linii), w tym dzielenie przez zero, przepełnienie
-  i za duża liczba w kodzie;
-- bardzo głębokie nawiasy: limit jest dopasowany do `ulimit -s`;
+- błędy w programie (z numerem linii), w tym dzielenie przez zero, przepełnienie,
+  za duża liczba w kodzie i zmienna bez wartości;
+- bardzo głębokie nawiasy: limit jest dopasowany do `ulimit -s`; 65 536 zmiennych
+  i 65 536 zagnieżdżonych bloków;
 - plik źródłowy skrócony w trakcie wykonania (`SIGBUS` jest obsługiwany);
 - pełny dysk, `/dev/full`, zamknięty potok; przy `build` niepełny plik wynikowy jest usuwany;
 - brak pamięci albo limit procesów: tryb wielordzeniowy przechodzi wtedy na wykonanie po kolei.
 
-Sprawdzają to `make test` (105 testów, programy w obu trybach) i `make fuzz`:
+Sprawdzają to `make test` (180 testów, programy w obu trybach) i `make fuzz`:
 
-- `tests/fuzz/fuzz.py`: losowe programy porównane z niezależną implementacją w Pythonie
-  (wyjście, komunikat błędu, numer linii, kod wyjścia);
+- `tests/fuzz/oracle.py`: niezależna implementacja Fih w Pythonie (wyrocznia);
+- `tests/fuzz/fuzz2.py`: losowe programy 0.2 (zmienne, `if`, `while`, `break`,
+  łańcuchy porównań, błędy) porównane z wyrocznią: wyjście, komunikat błędu,
+  numer linii, kod wyjścia, w obu trybach;
+- `tests/fuzz/fuzz.py`: to samo dla programów `print`/`calc`;
 - `tests/fuzz/par_fuzz.py`: to samo dla dużych programów dzielonych na rdzenie;
 - `tests/fuzz/gcc_oracle.py`: wyrażenia skompilowane przez gcc (`-fwrapv`) jako druga,
   niezależna wyrocznia arytmetyki;
@@ -135,7 +146,17 @@ dokładny albo zgłoszony jako błąd:
 
 ## Wydajność
 
-Program testowy ma 100 000 linii `print`/`calc`. Pomiar na Celeronie 1005M, im więcej, tym lepiej:
+Pomiar na Celeronie 1005M (2 rdzenie), im więcej, tym lepiej. Podczas pomiaru
+system był obciążony innymi programami, więc wartości bezwzględne są niższe
+niż na wolnej maszynie; wszystkie języki mierzono w tych samych warunkach.
+
+**Pętle** — liczby pierwsze mniejsze od 300 000 sprawdzane dzieleniem próbnym
+(`while`, `if`, `%`, `break`), ten sam algorytm w każdym języku
+(`bench/primes/`):
+
+![Pętle: liczby pierwsze](docs/loops.svg)
+
+**Program `print`/`calc`** — 100 000 linii ze stałymi wyrażeniami:
 
 ![Wykonanie gotowego programu](docs/exec.svg)
 ![Od kodu źródłowego do wyniku](docs/source.svg)
@@ -144,32 +165,36 @@ Program testowy ma 100 000 linii `print`/`calc`. Pomiar na Celeronie 1005M, im w
 
 | | Fih | Fih (build) | C (gcc -O2) | C++ (g++ -O2) | Python 3.13 |
 |---|---|---|---|---|---|
-| wykonanie, linii/s | **12,3 mln** (2 rdzenie) | **323 mln** | 7,9 mln | 6,7 mln | 41 tys. |
-| wykonanie na 1 rdzeniu, linii/s | **8,2 mln** | | 7,4 mln | | |
-| od źródła do wyniku, linii/s | **12,3 mln** | 7,4 mln | 2,9 tys. | 977 | 41 tys. |
-| Hello World, uruchomień/s | 2,8 tys. | **3,3 tys.** | 1,0 tys. | 436 | 39 |
+| pętle, liczb/s | 752 tys. | 748 tys. | **889 tys.** | **903 tys.** | 36 tys. |
+| program print/calc, linii/s | **8,9 mln** (2 rdzenie) | **127 mln** | 7,9 mln | 6,7 mln | 35 tys. |
+| ten sam na 1 rdzeniu, linii/s | **6,6 mln** | | 6,4 mln | | |
+| od źródła do wyniku, linii/s | **8,9 mln** | 4,8 mln | 2,9 tys. | 977 | 35 tys. |
+| Hello World, uruchomień/s | 1,6 tys. | **2,4 tys.** | 374 | 172 | 27 |
 
-Na jednym rdzeniu (300 uruchomień, 95% przedział ufności średniej): Fih 12,33 ± 0,12 ms,
-C 13,47 ± 0,04 ms.
+W pętlach Fih jest około 20 razy szybszy od Pythona i ma około 85% szybkości C:
+kompilator zamienia dzielenie przez stałą na mnożenie, a porównania w
+warunkach na pojedyncze skoki, ale zmienne trzyma w pamięci, nie w rejestrach.
+„Fih” (bez build) wlicza kompilację do pamięci przy każdym uruchomieniu.
 
-Interpreter jest zoptymalizowany ręcznie: skanowanie napisów SSE2, parsowanie
-liczb SWAR (8 cyfr naraz, osobne ścieżki dla krótkich liczb), wypisywanie liczb
-po 2 cyfry bez dzielenia, wyrażenia liczone w jednym przejściu bez rekurencji
-(poza nawiasami), kod ułożony tak, żeby typowa ścieżka nie zawierała skoków
-(rzadkie przypadki w osobnej sekcji), proste ścieżki dla `calc("…")` i
-`print("…")` bez spacji, duże programy na wszystkich rdzeniach.
+Programy `print`/`calc` ze stałymi liczy ręcznie zoptymalizowany interpreter:
+skanowanie napisów SSE2, parsowanie liczb SWAR (8 cyfr naraz), wypisywanie liczb
+po 2 cyfry bez dzielenia, wyrażenia w jednym przejściu, typowa ścieżka bez
+skoków, duże programy na wszystkich rdzeniach. `fih build` liczy taki program
+już podczas kompilacji, więc plik wynikowy tylko wypisuje gotowy wynik.
 
 ## Struktura
 
 ```
-src/main.asm    start programu, wczytanie pliku (open/fstat/mmap)
-src/interp.asm  wykonywanie linii, print
-src/expr.asm    parser i ewaluator wyrażeń dla calc
-src/io.asm      buforowane wyjście (stdout albo pamięć), liczby, błędy
-src/elf.asm     zapis skompilowanego programu jako plik ELF
-src/par.asm     wykonanie dużych programów na wielu rdzeniach
+src/main.asm    start programu, wczytanie pliku, wybór silnika
+src/comp.asm    kompilator 0.2: parser, generator kodu x86-64, JIT, zapis ELF
+src/rt.asm      środowisko uruchomieniowe skompilowanych programów (wyjście, błędy)
+src/interp.asm  szybki interpreter programów print/calc
+src/expr.asm    parser i ewaluator wyrażeń stałych dla calc
+src/io.asm      wyjście (stdout albo pamięć), liczby, błędy
+src/elf.asm     zapis gotowego wyniku jako plik ELF
+src/par.asm     wykonanie dużych programów print/calc na wielu rdzeniach
 tests/          tests/ok (oczekiwane stdout), tests/err (oczekiwane błędy),
-                tests/fuzz (fuzzer z wyrocznią), tests/numbers.py
+                tests/fuzz (wyrocznia i fuzzery), tests/*.py
 bench/          generator programów testowych, benchmark, wykresy (charts.py)
 docs/           wykresy kolumnowe SVG
 ```

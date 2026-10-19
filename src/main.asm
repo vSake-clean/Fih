@@ -38,8 +38,12 @@ msg_usage_len   equ $ - msg_usage
 msg_help:       db "Fih ", FIH_VERSION, " — język programowania w assembly x86-64", 10, 10
 msg_help_usage_len equ $ - msg_help
                 db 10, "Instrukcje (jedna na linię, komentarze od #):", 10
-                db '  print("napis")      wypisuje napis; sekwencje \n \t \\ \"', 10
-                db '  calc("wyrażenie")   liczy wyrażenie całkowite 64-bit: + - * / % ( )', 10, 10
+                db '  print("napis")         wypisuje napis; sekwencje \n \t \\ \"', 10
+                db '  calc(wyrażenie)        wypisuje wartość wyrażenia (liczby całkowite 64-bit)', 10
+                db '  x = wyrażenie          przypisanie; także += -= *= /= %=', 10
+                db '  if w { ... } else if w { ... } else { ... }', 10
+                db '  while w { ... }        pętla; break, continue', 10
+                db "Wyrażenia: + - * / % ( ), == != < <= > >= (także 0 < x < 10), and or not.", 10, 10
                 db "Kody wyjścia: 0 sukces, 1 błąd w programie, 2 złe argumenty.", 10
                 db "Specyfikacja: https://github.com/vSake-clean/Fih/blob/main/SPEC.md", 10
 msg_help_len    equ $ - msg_help

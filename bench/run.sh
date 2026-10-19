@@ -48,4 +48,18 @@ hf --warmup 10 --export-json $O/hello.json \
    -n Fih "./fih $O/hello/hello.fh" -n "Fih (build)" "$O/hello/hello_fih" -n Python "$PY $O/hello/hello.py" \
    -n C "$O/hello/hello_c" -n C++ "$O/hello/hello_cpp"
 
+# pętle (Fih 0.2): liczby pierwsze dzieleniem próbnym, ten sam algorytm wszędzie
+P=bench/primes
+echo "benchmark pętli (liczby pierwsze)..."
+./fih build $P/primes.fh -o $O/primes_fih
+gcc -O2 -o $O/primes_c $P/primes.c
+g++ -O2 -o $O/primes_cpp $P/primes.cpp
+exp=$(./fih $P/primes.fh)
+for cmd in "$O/primes_fih" "$PY $P/primes.py" "$O/primes_c" "$O/primes_cpp"; do
+    [[ "$($cmd)" == "$exp" ]] || { echo "RÓŻNY WYNIK: $cmd"; exit 1; }
+done
+hf --warmup 2 --export-json $O/loops.json \
+   -n Fih "./fih $P/primes.fh" -n "Fih (build)" "$O/primes_fih" -n Python "$PY $P/primes.py" \
+   -n C "$O/primes_c" -n C++ "$O/primes_cpp"
+
 python3 bench/report.py "$N" "$O"
