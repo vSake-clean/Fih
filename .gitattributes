@@ -1,0 +1,3 @@
+# Benchmarki i testy nie są częścią języka: GitHub nie liczy ich w statystyce języków
+bench/** linguist-vendored
+tests/** linguist-vendored
