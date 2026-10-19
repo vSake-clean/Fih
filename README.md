@@ -148,7 +148,7 @@ Fih nigdy nie powinien skończyć się awarią. Każda sytuacja kończy się kom
 - pełny dysk, `/dev/full`, zamknięty potok; przy `build` niepełny plik wynikowy jest usuwany;
 - brak pamięci albo limit procesów: tryb wielordzeniowy przechodzi wtedy na wykonanie po kolei.
 
-Sprawdzają to `make test` (198 testów, programy w obu trybach) i `make fuzz`:
+Sprawdzają to `make test` (199 testów, programy w obu trybach) i `make fuzz`:
 
 - `tests/fuzz/oracle.py`: niezależna implementacja Fih w Pythonie (wyrocznia);
 - `tests/fuzz/fuzz2.py`: losowe programy 0.2 (zmienne, `if`, `while`, `break`,
@@ -171,9 +171,8 @@ dokładny albo zgłoszony jako błąd:
 
 ## Wydajność
 
-Pomiar na Celeronie 1005M (2 rdzenie), im więcej, tym lepiej. Podczas pomiaru
-system był obciążony innymi programami, więc wartości bezwzględne są niższe
-niż na wolnej maszynie; wszystkie języki mierzono w tych samych warunkach.
+Pomiar na Celeronie 1005M (2 rdzenie), im więcej, tym lepiej. Fih jest
+szybszy od C (gcc -O2) we wszystkich pomiarach.
 
 **Pętle** — liczby pierwsze mniejsze od 300 000 sprawdzane dzieleniem próbnym
 (`while`, `if`, `%`, `break`), ten sam algorytm w każdym języku
@@ -190,16 +189,18 @@ niż na wolnej maszynie; wszystkie języki mierzono w tych samych warunkach.
 
 | | Fih | Fih (build) | C (gcc -O2) | C++ (g++ -O2) | Python 3.13 |
 |---|---|---|---|---|---|
-| pętle, liczb/s | 752 tys. | 748 tys. | **889 tys.** | **903 tys.** | 36 tys. |
-| program print/calc, linii/s | **8,9 mln** (2 rdzenie) | **127 mln** | 7,9 mln | 6,7 mln | 35 tys. |
-| ten sam na 1 rdzeniu, linii/s | **6,6 mln** | | 6,4 mln | | |
-| od źródła do wyniku, linii/s | **8,9 mln** | 4,8 mln | 2,9 tys. | 977 | 35 tys. |
-| Hello World, uruchomień/s | 1,6 tys. | **2,4 tys.** | 374 | 172 | 27 |
+| pętle, liczb/s | **2,5 mln** | **2,5 mln** | 1,4 mln | 1,4 mln | 59 tys. |
+| program print/calc, linii/s | **11,7 mln** (2 rdzenie) | **290 mln** | 8,1 mln | 6,8 mln | 43 tys. |
+| ten sam na 1 rdzeniu, linii/s | **7,9 mln** | | 7,5 mln | | |
+| od źródła do wyniku, linii/s | **11,7 mln** | 8,0 mln | 2,9 tys. | 977 | 43 tys. |
+| Hello World, uruchomień/s | 2,6 tys. | **3,1 tys.** | 1,1 tys. | 449 | 40 |
 
-W pętlach Fih jest około 20 razy szybszy od Pythona i ma około 85% szybkości C:
-kompilator zamienia dzielenie przez stałą na mnożenie, a porównania w
-warunkach na pojedyncze skoki, ale zmienne trzyma w pamięci, nie w rejestrach.
-„Fih” (bez build) wlicza kompilację do pamięci przy każdym uruchomieniu.
+W pętlach Fih jest 1,9 razy szybszy od C i 43 razy szybszy od Pythona.
+Kompilator zamienia dzielenie przez stałą na mnożenie, porównania w warunkach
+na pojedyncze skoki, a dzielenie przez zmienną wykonuje instrukcją 32-bitową,
+gdy obie liczby mieszczą się w 32 bitach (2–3 razy szybszą od 64-bitowej,
+której używa gcc). „Fih” (bez build) wlicza kompilację do pamięci przy każdym
+uruchomieniu.
 
 Programy `print`/`calc` ze stałymi liczy ręcznie zoptymalizowany interpreter:
 skanowanie napisów SSE2, parsowanie liczb SWAR (8 cyfr naraz), wypisywanie liczb

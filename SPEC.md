@@ -371,7 +371,7 @@ wynikiem albo komunikatem `fih: błąd...`. Wyjątek: zamknięty potok (np.
 ./fih build program.fh -o nazwa   # kompilacja do ./nazwa
 echo 'calc(6*7)' | ./fih /dev/stdin
 ./fih --help                      # opis użycia na stdout (także -h)
-./fih --version                   # wypisuje: fih 0.3.0
+./fih --version                   # wypisuje: fih 0.3.1
 ./fih examples/kalkulator.fh      # program czytający z klawiatury
 ```
 

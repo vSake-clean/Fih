@@ -3,6 +3,15 @@
 Format oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 Wersje: `0.MINOR.PATCH` (patrz [CONTRIBUTING.md](CONTRIBUTING.md#wersje)).
 
+## [0.3.1] - 2026-10-19
+
+### Zmienione (wydajność — Fih szybszy od C we wszystkich pomiarach)
+- Dzielenie i reszta przez zmienną: instrukcja 32-bitowa, gdy obie liczby
+  mieszczą się w 32 bitach (pętle z liczbami pierwszymi: 1,9× szybciej niż C).
+- Wyjście zapisywane przez wskaźnik zapisu; gorący kod interpretera
+  ułożony na początku programu i wyrównany (program print/calc: szybszy niż C
+  także na jednym rdzeniu).
+
 ## [0.3.0] - 2026-10-19
 
 ### Dodane
@@ -65,6 +74,7 @@ Pierwsza wersja.
 - Interpretacja (`fih program.fh`) i kompilacja do statycznego ELF (`fih build`).
 - Duże programy (od 512 KB) na wszystkich rdzeniach.
 
+[0.3.1]: https://github.com/vSake-clean/Fih/releases/tag/v0.3.1
 [0.3.0]: https://github.com/vSake-clean/Fih/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vSake-clean/Fih/releases/tag/v0.2.0
 [0.1.1]: https://github.com/vSake-clean/Fih/releases/tag/v0.1.1

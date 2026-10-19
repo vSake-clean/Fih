@@ -1,23 +1,23 @@
 test,lang,value,unit,ms
-exec,Fih,8942165.7,linii/s,11.183
-exec,Fih (build),127356677.7,linii/s,0.785
-exec,C,7885740.3,linii/s,12.681
-exec,C++,6688947.1,linii/s,14.950
-exec,Python,35186.3,linii/s,2842.014
-source,Fih,8942165.7,linii/s,11.183
-source,Fih (build),4789043.1,linii/s,20.881
-source,C,2918.9,linii/s,34259.604
-source,C++,976.6,linii/s,102390.841
-source,Python,35186.3,linii/s,2842.014
-startup,Fih,1615.7,uruchomień/s,0.619
-startup,Fih (build),2429.6,uruchomień/s,0.412
-startup,C,374.2,uruchomień/s,2.673
-startup,C++,171.5,uruchomień/s,5.830
-startup,Python,27.2,uruchomień/s,36.761
-loops,Fih,751527.8,liczb/s,399.184
-loops,Fih (build),747838.9,liczb/s,401.153
-loops,C,888817.6,liczb/s,337.525
-loops,C++,903225.3,liczb/s,332.141
-loops,Python,36150.0,liczb/s,8298.709
-exec1,Fih,6598709.4,linii/s,15.154
-exec1,C,6449896.2,linii/s,15.504
+exec,Fih,11655381.2,linii/s,8.580
+exec,Fih (build),289917542.0,linii/s,0.345
+exec,C,8062467.7,linii/s,12.403
+exec,C++,6755127.7,linii/s,14.804
+exec,Python,43456.7,linii/s,2301.140
+source,Fih,11655381.2,linii/s,8.580
+source,Fih (build),8039053.7,linii/s,12.439
+source,C,2918.9,linii/s,34259.326
+source,C++,976.7,linii/s,102390.695
+source,Python,43456.7,linii/s,2301.140
+startup,Fih,2626.6,uruchomień/s,0.381
+startup,Fih (build),3107.3,uruchomień/s,0.322
+startup,C,1059.4,uruchomień/s,0.944
+startup,C++,449.1,uruchomień/s,2.227
+startup,Python,39.8,uruchomień/s,25.133
+loops,Fih,2532218.5,liczb/s,118.472
+loops,Fih (build),2533924.4,liczb/s,118.393
+loops,C,1361913.0,liczb/s,220.277
+loops,C++,1368012.8,liczb/s,219.295
+loops,Python,59236.3,liczb/s,5064.429
+exec1,Fih,7932211.4,linii/s,12.607
+exec1,C,7523257.9,linii/s,13.292

@@ -8,19 +8,19 @@ text{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#24292
 <text class="t" x="16" y="26">Pętle: liczby pierwsze [liczb/s]</text>
 <text class="s" x="16" y="46">liczby &lt; 300 000 sprawdzane dzieleniem próbnym (while, if, %, break) · wyżej = lepiej · skala logarytmiczna</text>
 <line class="g" x1="16" x2="744" y1="296" y2="296"/>
-<rect class="f" x="56.8" y="94.5" width="64.0" height="201.5" rx="3"/>
-<text class="v" x="88.8" y="88.5" text-anchor="middle">751,5 tys.</text>
+<rect class="f" x="56.8" y="82.2" width="64.0" height="213.8" rx="3"/>
+<text class="v" x="88.8" y="76.2" text-anchor="middle">2,5 mln</text>
 <text class="l" x="88.8" y="316" text-anchor="middle">Fih</text>
-<rect class="f" x="202.4" y="94.7" width="64.0" height="201.3" rx="3"/>
-<text class="v" x="234.4" y="88.7" text-anchor="middle">747,8 tys.</text>
+<rect class="f" x="202.4" y="82.2" width="64.0" height="213.8" rx="3"/>
+<text class="v" x="234.4" y="76.2" text-anchor="middle">2,5 mln</text>
 <text class="l" x="234.4" y="316" text-anchor="middle">Fih (build)</text>
-<rect class="b" x="348.0" y="86.7" width="64.0" height="209.3" rx="3"/>
-<text class="v" x="380.0" y="80.7" text-anchor="middle">888,8 tys.</text>
+<rect class="b" x="348.0" y="106.1" width="64.0" height="189.9" rx="3"/>
+<text class="v" x="380.0" y="100.1" text-anchor="middle">1,4 mln</text>
 <text class="l" x="380.0" y="316" text-anchor="middle">C</text>
-<rect class="b" x="493.6" y="85.9" width="64.0" height="210.1" rx="3"/>
-<text class="v" x="525.6" y="79.9" text-anchor="middle">903,2 tys.</text>
+<rect class="b" x="493.6" y="106.0" width="64.0" height="190.0" rx="3"/>
+<text class="v" x="525.6" y="100.0" text-anchor="middle">1,4 mln</text>
 <text class="l" x="525.6" y="316" text-anchor="middle">C++</text>
-<rect class="b" x="639.2" y="236.1" width="64.0" height="59.9" rx="3"/>
-<text class="v" x="671.2" y="230.1" text-anchor="middle">36,1 tys.</text>
+<rect class="b" x="639.2" y="227.3" width="64.0" height="68.7" rx="3"/>
+<text class="v" x="671.2" y="221.3" text-anchor="middle">59,2 tys.</text>
 <text class="l" x="671.2" y="316" text-anchor="middle">Python</text>
 </svg>
