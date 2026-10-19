@@ -157,3 +157,8 @@ tests/          tests/ok (oczekiwane stdout), tests/err (oczekiwane błędy),
 bench/          generator programów testowych, benchmark, wykresy (charts.py)
 docs/           wykresy kolumnowe SVG
 ```
+
+## Licencja
+
+[MIT](LICENSE) © 2026 vSake. Kod Fih można dowolnie używać, zmieniać i rozpowszechniać,
+także komercyjnie, pod warunkiem zachowania informacji o autorze i treści licencji.
