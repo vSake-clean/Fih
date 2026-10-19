@@ -13,7 +13,7 @@
 default rel
 
 global run_program
-extern run, out_add_raw, out_to_fixed_memory, outlen
+extern run, out_add_raw, out_to_fixed_memory, out_used
 extern quiet_errors, child_pids, kill_children
 
 %define PAR_MIN (512 * 1024)    ; mniejsze programy: zwykłe wykonanie
@@ -215,7 +215,7 @@ run_program:
     sub rsi, rdi
     mov edx, 1
     call run
-    mov rax, [outlen]
+    call out_used
     mov [rbp], rax
     mov eax, SYS_EXIT_GROUP
     xor edi, edi

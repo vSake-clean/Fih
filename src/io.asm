@@ -10,7 +10,7 @@ default rel
 %define MADV_HUGEPAGE 14
 
 global write_fd, write_all, out_flush, out_write, out_write_nl, out_byte, out_int, out_int_nl, fmt_int
-global die, die_noline, out_to_memory, out_held_write, out_held_len, out_add_raw, outlen
+global die, die_noline, out_to_memory, out_held_write, out_held_len, out_add_raw, out_used
 global quiet_errors, child_pids, kill_children, out_to_fixed_memory
 global die_name, out_reset, bail_rsp, bail_ip, out_held_stdout
 extern cur_line
@@ -23,11 +23,11 @@ extern cur_line
 ; Szybka ścieżka jest ta sama: obuf/ocap wskazują bieżący bufor.
 
 section .bss
-obuf:    resq 1             ; bieżący bufor wyjścia (ustawia out_reset przy starcie)
-ocap:    resq 1             ; jego pojemność
-ocap24:  resq 1             ; pojemność - 24 (miejsce na liczbę)
+obuf:    resq 1             ; początek bieżącego bufora wyjścia (out_reset przy starcie)
+optr:    resq 1             ; miejsce następnego zapisu
+oend:    resq 1             ; koniec bufora
+oend24:  resq 1             ; koniec - 24 (miejsce na liczbę)
 outbuf:  resb OUTSZ
-outlen:  resq 1
 direct:  resq 1             ; 1 = tryb pamięci
 fixedm:  resq 1             ; 1 = bufor stałej wielkości (nie wolno go powiększać)
 segs:    resq 2 * MAXSEG    ; kawałki: dq wskaźnik (albo SEG_MEM | przesunięcie w obuf), dq długość
@@ -112,12 +112,21 @@ write_all:
     mov edi, 1
     syscall
 
-; set_buf(rdi=bufor, rsi=pojemność) — nowy bieżący bufor wyjścia
+; set_buf(rdi=bufor, rsi=pojemność, rdx=zajęte bajty) — nowy bieżący bufor
 set_buf:
     mov [obuf], rdi
-    mov [ocap], rsi
+    add rsi, rdi
+    mov [oend], rsi
     sub rsi, 24
-    mov [ocap24], rsi
+    mov [oend24], rsi
+    add rdx, rdi
+    mov [optr], rdx
+    ret
+
+; out_used -> rax = zajęta część bieżącego bufora
+out_used:
+    mov rax, [optr]
+    sub rax, [obuf]
     ret
 
 ; out_to_memory(rdi=przewidywana długość wyjścia) — od teraz wyjście zostaje
@@ -130,6 +139,7 @@ out_to_memory:
     ; out_room przeniesie wyjście do pamięci z mmap)
     lea rdi, [outbuf]
     mov esi, OUTSZ
+    xor edx, edx
     call set_buf
     jmp .mode
 .big:
@@ -159,10 +169,10 @@ out_to_memory:
     pop rdi
 .no_huge:
     pop rsi
+    xor edx, edx
     call set_buf
 .mode:
     xor eax, eax
-    mov [outlen], rax
     mov [nseg], rax
     mov [seg_start], rax
     mov [fixedm], rax
@@ -172,9 +182,9 @@ out_to_memory:
 ; out_to_fixed_memory(rdi=bufor, rsi=pojemność) — wyjście do podanego bufora;
 ; przepełnienie kończy program błędem (w potomku: kodem 3)
 out_to_fixed_memory:
+    xor edx, edx
     call set_buf
     xor eax, eax
-    mov [outlen], rax
     mov [nseg], rax
     mov [seg_start], rax
     mov qword [fixedm], 1
@@ -186,11 +196,11 @@ out_reset:
     xor eax, eax
     mov [direct], rax
     mov [fixedm], rax
-    mov [outlen], rax
     mov [nseg], rax
     mov [seg_start], rax
     lea rdi, [outbuf]
     mov esi, OUTSZ
+    xor edx, edx
     jmp set_buf
 
 ; out_room(rsi=potrzebne bajty) — robi miejsce w buforze: w trybie strumienia
@@ -209,9 +219,11 @@ out_room:
     jne out_nomem
     push rdi
     push rsi
-    mov rdx, [ocap]
+    call out_used
+    push rax                    ; zajęte bajty
+    mov rdx, [oend]
+    sub rdx, [obuf]
     add rdx, rdx
-    mov rax, [outlen]
     lea rax, [rax + rsi + OUTSZ]
     cmp rdx, rax
     cmovb rdx, rax
@@ -223,10 +235,12 @@ out_room:
     je .from_static
     mov eax, SYS_MREMAP
     mov rdi, [obuf]
-    mov rsi, [ocap]
+    mov rsi, [oend]
+    sub rsi, rdi
     mov r10d, MREMAP_MAYMOVE
     syscall
     pop rsi
+    pop rdx
     cmp rax, -4095
     jae out_nomem
     mov rdi, rax
@@ -244,13 +258,14 @@ out_room:
     xor r9d, r9d
     syscall
     pop rsi
+    pop rdx
     cmp rax, -4095
     jae out_nomem
     mov rdi, rax
     push rsi
     push rdi
     lea rsi, [outbuf]
-    mov rcx, [outlen]
+    mov rcx, rdx
     rep movsb
     pop rdi
     pop rsi
@@ -262,7 +277,8 @@ out_room:
 out_nomem:
     xor eax, eax
     mov [direct], rax
-    mov [outlen], rax
+    mov rax, [obuf]
+    mov [optr], rax
     lea rdi, [msg_nomem]
     mov esi, msg_nomem_len
     jmp die_noline
@@ -272,11 +288,11 @@ out_nomem:
 out_flush:
     cmp qword [direct], 0
     jne .done
-    mov rdx, [outlen]
-    test rdx, rdx
-    jz .done
     mov rsi, [obuf]
-    mov qword [outlen], 0
+    mov rdx, [optr]
+    sub rdx, rsi
+    jz .done
+    mov [optr], rsi
     push rdi
     mov edi, STDOUT
     call write_all
@@ -300,7 +316,7 @@ out_add_raw:
 
 ; close_seg — zamyka bieżący fragment obuf jako kawałek wyjścia
 close_seg:
-    mov rax, [outlen]
+    call out_used
     mov rcx, [seg_start]
     cmp rax, rcx
     je .done
@@ -380,9 +396,9 @@ out_held_stdout:
 
 ; out_write(rdi=dane, rsi=długość)
 out_write:
-    mov rax, [outlen]
+    mov rax, [optr]
     lea rcx, [rax+rsi]
-    cmp rcx, [ocap]
+    cmp rcx, [oend]
     jbe .copy
     call out_room
     cmp qword [direct], 0
@@ -395,27 +411,26 @@ out_write:
     mov edi, STDOUT
     jmp write_all
 .copy:
-    mov rax, [outlen]
+    mov rax, [optr]
+    lea rcx, [rax + rsi]
+    mov [optr], rcx
     mov rcx, rsi
-    add [outlen], rsi
     mov rsi, rdi
-    mov rdi, [obuf]
-    add rdi, rax
+    mov rdi, rax
     jmp copy_bytes
 
 ; out_byte(dil=bajt)
 out_byte:
-    mov rax, [outlen]
-    cmp rax, [ocap]
+    mov rax, [optr]
+    cmp rax, [oend]
     jb .put
     mov esi, 1
     call out_room
-    mov rax, [outlen]
+    mov rax, [optr]
 .put:
-    mov rcx, [obuf]
-    mov [rcx+rax], dil
+    mov [rax], dil
     inc rax
-    mov [outlen], rax
+    mov [optr], rax
     ret
 
 ; fmt_int(rdi=liczba ze znakiem, rsi=koniec bufora, min. 20 bajtów)
@@ -466,15 +481,13 @@ fmt_int:
 ; out_int_nl(rdi=liczba ze znakiem) — wypisuje liczbę i '\n' wprost do bufora:
 ; najpierw liczba cyfr (bsr * log10(2) + tablica potęg 10), potem cyfry od końca
 out_int_nl:
-    mov rax, [outlen]
-    cmp rax, [ocap24]
+    mov rsi, [optr]         ; miejsce zapisu
+    cmp rsi, [oend24]
     jbe .room
     mov esi, 24
     call out_room
-    mov rax, [outlen]
+    mov rsi, [optr]
 .room:
-    mov rsi, [obuf]
-    add rsi, rax            ; miejsce zapisu
     mov rax, rdi
     test rax, rax
     jns .pos
@@ -525,9 +538,8 @@ out_int_nl:
     shr rax, cl
     mov [rsi], rax
     mov byte [rdi], 10
-    sub rdi, [obuf]
     inc rdi
-    mov [outlen], rdi
+    mov [optr], rdi
     ret
 .big:
     mov byte [rdi], 10
@@ -564,20 +576,17 @@ out_int_nl:
     lea rdi, [rsi + 1]
     mov byte [rdi], 10
 .done:
-    sub rdi, [obuf]
     inc rdi
-    mov [outlen], rdi
+    mov [optr], rdi
     ret
 
 ; out_write_nl(rdi=dane, rsi=długość) — jak out_write, z dopisanym '\n'
 out_write_nl:
-    mov rax, [outlen]
-    lea rcx, [rax + rsi + 1]
-    cmp rcx, [ocap]
+    mov rdx, [optr]
+    lea rcx, [rdx + rsi + 1]
+    cmp rcx, [oend]
     ja .slow
-    mov [outlen], rcx
-    mov rdx, [obuf]
-    add rdx, rax
+    mov [optr], rcx
     mov byte [rdx + rsi], 10
     mov rcx, rsi
     mov rsi, rdi

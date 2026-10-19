@@ -143,6 +143,7 @@ cmp -s <(./fih "$T/loop.fh") <(python3 -c "import sys; sys.stdout.write(''.join(
 python3 tests/output_numbers.py ./fih && ok || bad "wypisywanie liczb (tests/output_numbers.py)"
 python3 tests/division.py ./fih && ok || bad "dzielenie (tests/division.py)"
 python3 tests/division_const.py ./fih >/dev/null && ok || bad "dzielenie przez stałe (tests/division_const.py)"
+python3 tests/division_var.py ./fih >/dev/null && ok || bad "dzielenie przez zmienną (tests/division_var.py)"
 python3 tests/numbers.py ./fih && ok || bad "parsowanie liczb (tests/numbers.py)"
 head -c 100000 /dev/urandom > "$T/rand.fh"; ./fih "$T/rand.fh" >/dev/null 2>&1; code=$?; [[ $code -le 1 ]] && ok || bad "losowe bajty"
 

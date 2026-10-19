@@ -69,6 +69,10 @@ ident_tab:
 %endmacro
 
 section .text
+; położenie gorącej pętli w pamięci wyraźnie zmienia szybkość (do 6%);
+; run zaczyna się 52 bajty za granicą 64 B — najlepsze w pomiarach
+align 64
+    times 52 db 0xcc
 
 ; run(rdi=kod, rsi=długość, rdx=numer pierwszej linii)
 ; r14 = kursor, r15 = koniec kodu, rbx = nazwa instrukcji, r12 = jej długość,

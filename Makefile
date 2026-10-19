@@ -2,8 +2,8 @@ NASM      := nasm
 NASMFLAGS := -f elf64 -g -F dwarf -w+all -w-reloc-rel-dword -I src/
 LD        := ld
 
-SRC := $(wildcard src/*.asm)
-OBJ := $(SRC:src/%.asm=build/%.o)
+# gorący kod szybkiego interpretera na początku pliku (ułożenie w pamięci ma znaczenie)
+OBJ := $(patsubst %,build/%.o,expr interp io par main elf comp rt)
 
 fih: $(OBJ)
 	$(LD) -o $@ $(OBJ)
