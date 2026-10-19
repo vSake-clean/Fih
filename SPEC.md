@@ -1,38 +1,46 @@
-# Specyfikacja języka Fih (wersja 0.1.1)
+# Specyfikacja języka Fih (wersja 0.2)
 
 Ten plik opisuje dokładnie, jak działa język Fih i jego implementacja `fih`.
 Jest napisany tak, żeby człowiek albo model AI mógł go przeczytać i znać
 zachowanie każdej konstrukcji bez uruchamiania kodu. Wszystkie przykłady
-i komunikaty pochodzą z działającej implementacji.
+i komunikaty pochodzą z działającej implementacji. Wzorcowa implementacja
+w Pythonie, z którą testy porównują `fih`, jest w `tests/fuzz/oracle.py`.
 
 ## 1. Czym jest Fih
 
-- Fih to celowo minimalny język: w wersji 0.1 ma dokładnie dwie instrukcje,
-  `print` i `calc`.
-- Implementacja (`fih`) jest napisana w czystym assembly x86-64 (NASM), bez libc,
-  wyłącznie na syscallach Linuksa. Działa tylko na Linuksie x86-64.
-- Ten sam program można uruchomić od razu (interpretacja) albo skompilować
-  do samodzielnego pliku ELF (`fih build`).
+- Fih to mały język imperatywny: zmienne całkowite, `if`/`else`, pętla
+  `while`, `break`/`continue`, wypisywanie napisów i liczb.
+- Implementacja (`fih`) jest napisana w czystym assembly x86-64 (NASM),
+  bez libc, wyłącznie na syscallach Linuksa. Działa tylko na Linuksie x86-64.
+- `fih` jest kompilatorem: program zawsze jest tłumaczony na kod maszynowy
+  x86-64. `fih program.fh` uruchamia go od razu z pamięci (JIT),
+  `fih build program.fh` zapisuje go jako samodzielny plik ELF.
 - Pliki źródłowe mają rozszerzenie `.fh`.
 
 ## 2. Przykład
 
 ```
-# komentarz
-print("Witaj, świecie!")
-calc("2 + 2")             # 4
-calc("(1 + 2) * -3")      # -9
-print("2 + 3")            # wypisuje dosłownie: 2 + 3
+# liczby pierwsze mniejsze od 30
+n = 2
+while n < 30 {
+    d = 2
+    pierwsza = 1
+    while d * d <= n {
+        if n % d == 0 {
+            pierwsza = 0
+            break
+        }
+        d += 1
+    }
+    if pierwsza {
+        calc(n)
+    }
+    n += 1
+}
+print("koniec")
 ```
 
-Wyjście:
-
-```
-Witaj, świecie!
-4
--9
-2 + 3
-```
+Wyjście: liczby `2 3 5 7 11 13 17 19 23 29`, każda w osobnej linii, potem `koniec`.
 
 ## 3. Budowa pliku
 
@@ -45,8 +53,8 @@ Witaj, świecie!
   - pusta albo zawierać tylko spacje, tabulatory i `\r`,
   - komentarzem: `#` i wszystko do końca linii,
   - jedną instrukcją, po której opcjonalnie stoją spacje/tabulatory i komentarz.
-- Białe znaki (spacja, tabulator) są dozwolone: na początku linii, między nazwą
-  instrukcji a `(`, między `(` a napisem, między napisem a `)` i po `)`.
+- Wcięcia nie mają znaczenia. Bloki wyznaczają klamry: `{` na końcu linii
+  `if`/`while`, `}` na początku osobnej linii.
 - `#` wewnątrz napisu nie jest komentarzem: `print("# to nie komentarz")`.
 - Znak BOM UTF-8 na początku pliku nie jest obsługiwany (błąd „nieoczekiwany
   znak na początku instrukcji”).
@@ -56,32 +64,46 @@ Witaj, świecie!
 ```ebnf
 program     = { linia } ;
 linia       = [ odstęp ] [ instrukcja [ odstęp ] ] [ komentarz ] [ "\r" ] "\n" ;
-instrukcja  = nazwa [ odstęp ] "(" [ odstęp ] napis [ odstęp ] ")" ;
-nazwa       = "print" | "calc" ;                    (* wielkość liter ma znaczenie *)
+instrukcja  = print | calc | przypisanie | if | while | koniec_bloku
+            | "break" | "continue" ;
+
+print       = "print" [ odstęp ] "(" [ odstęp ] napis [ odstęp ] ")" ;
+calc        = "calc" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
+przypisanie = nazwa [ odstęp ] ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) wyrażenie ;
+if          = "if" wyrażenie "{" ;
+while       = "while" wyrażenie "{" ;
+koniec_bloku= "}" [ "else" ( "{" | "if" wyrażenie "{" ) ] ;
+
 napis       = '"' { znak | ucieczka } '"' ;          (* w jednej linii *)
 znak        = dowolny bajt oprócz '"', '\' i nowej linii ;
 ucieczka    = "\n" | "\t" | "\\" | '\"' ;
 komentarz   = "#" { dowolny bajt oprócz nowej linii } ;
 odstęp      = ( " " | "\t" ) { " " | "\t" } ;
 
-(* wnętrze napisu w calc *)
-wyrażenie   = składnik { ( "+" | "-" ) składnik } ;
-składnik    = czynnik { ( "*" | "/" | "%" ) czynnik } ;
-czynnik     = ( "-" | "+" ) czynnik | liczba | "(" wyrażenie ")" ;
+(* wyrażenia, od najniższego priorytetu *)
+wyrażenie   = and { "or" and } ;
+and         = not { "and" not } ;
+not         = "not" not | porównanie ;
+porównanie  = suma { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) suma } ;
+suma        = iloczyn { ( "+" | "-" ) iloczyn } ;
+iloczyn     = unarny { ( "*" | "/" | "%" ) unarny } ;
+unarny      = ( "-" | "+" ) unarny | prosty ;
+prosty      = liczba | nazwa | "(" wyrażenie ")" ;
 liczba      = cyfra { cyfra } ;                     (* tylko dziesiętne *)
-cyfra       = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+nazwa       = ( litera | "_" ) { litera | cyfra | "_" } ;   (* litery ASCII *)
 ```
 
 W wyrażeniu spacje i tabulatory mogą stać między dowolnymi elementami.
+Słowa `and`, `or`, `not` muszą być osobnymi słowami (`x or y`, ale `xory` to nazwa).
+Wyrażenie bez cudzysłowu kończy się na `#` (komentarz) albo na końcu linii.
 
 ## 5. Instrukcje
 
 ### `print("napis")`
 
 Wypisuje napis i znak nowej linii. Napis jest wypisywany dosłownie: nic nie
-jest liczone ani podstawiane (`print("2 + 3")` wypisuje `2 + 3`).
-
-Sekwencje ucieczki:
+jest liczone ani podstawiane (`print("2 + 3")` wypisuje `2 + 3`, `print("x")`
+wypisuje `x`, nie wartość zmiennej).
 
 | zapis | znaczenie |
 |-------|-----------|
@@ -91,31 +113,94 @@ Sekwencje ucieczki:
 | `\"`  | cudzysłów |
 
 Każda inna sekwencja (np. `\q`) to błąd. Surowy tabulator w napisie jest dozwolony.
-`print("")` wypisuje pustą linię.
+`print("")` wypisuje pustą linię. `print` nie przyjmuje wyrażeń: `print(2)` to błąd.
 
-### `calc("wyrażenie")`
+### `calc(wyrażenie)` i `calc("wyrażenie")`
 
-Liczy wyrażenie na liczbach całkowitych 64-bitowych ze znakiem i wypisuje wynik
-dziesiętnie oraz znak nowej linii.
+Liczy wyrażenie i wypisuje wynik dziesiętnie oraz znak nowej linii. Oba
+zapisy są równoważne: `calc(x * 2)` i `calc("x * 2")` (zapis z cudzysłowem
+pochodzi z wersji 0.1). W zapisie z cudzysłowem całe wnętrze napisu musi być
+jednym wyrażeniem.
 
-- Zakres: od `-9223372036854775808` do `9223372036854775807`.
+### Przypisanie
+
+```
+x = 2 + 3      # nowa zmienna albo nowa wartość
+x += 1         # x = x + 1; podobnie -= *= /= %=
+```
+
+- `x op= e` liczy najpierw `x`, potem `e`, potem `x op e` — z tymi samymi
+  regułami błędów co zwykłe działanie (przepełnienie, dzielenie przez zero).
+- Wartość przypisuje się dopiero po policzeniu wyrażenia, więc `x = x + 1`
+  wymaga, żeby `x` miała już wartość.
+
+### `if` / `else if` / `else`
+
+```
+if warunek {
+    ...
+} else if inny_warunek {
+    ...
+} else {
+    ...
+}
+```
+
+Warunek jest prawdziwy, gdy jego wartość jest różna od 0. `else` musi stać
+w tej samej linii co `}` zamykające poprzednią gałąź. Gałęzi `else if` może
+być dowolnie wiele, `else` najwyżej jedno (na końcu).
+
+### `while`
+
+```
+while warunek {
+    ...
+}
+```
+
+Warunek jest liczony przed każdym obrotem. `break` kończy najbliższą pętlę,
+`continue` przechodzi do następnego obrotu (do sprawdzenia warunku).
+`break` i `continue` poza pętlą to błąd. Pętla bez końca (`while 1 { }`)
+działa, dopóki program nie zostanie przerwany.
+
+## 6. Wyrażenia
+
+Wszystkie wartości to liczby całkowite 64-bitowe ze znakiem: od
+`-9223372036854775808` do `9223372036854775807`.
+
+Priorytety (od najwyższego):
+
+| poziom | operatory | łączność |
+|--------|-----------|----------|
+| 1 | unarne `-` `+` | wiązane z najbliższym argumentem |
+| 2 | `*` `/` `%` | lewostronna |
+| 3 | `+` `-` | lewostronna |
+| 4 | `==` `!=` `<` `<=` `>` `>=` | łańcuch (jak w Pythonie) |
+| 5 | `not` | prawostronna |
+| 6 | `and` | lewostronna |
+| 7 | `or` | lewostronna |
+
 - Literały: tylko nieujemne liczby dziesiętne, zera wiodące są dozwolone (`007` = 7).
   Największy literał to `9223372036854775807`. Najmniejszą liczbę zapisuje się
-  jako `-9223372036854775807 - 1`.
-- Brak liczb ułamkowych, zapisu `1e3`, szesnastkowego, zmiennych i funkcji.
-- Operatory i priorytety (od najwyższego):
-  1. unarne `-` i `+` (można je łączyć: `--5` = 5, `- 5` = -5, `2*-3` = -6),
-  2. `*`, `/`, `%` (łączność lewostronna),
-  3. `+`, `-` (łączność lewostronna: `10 - 4 - 3` = 3).
-- Nawiasy `( )` zmieniają kolejność i można je dowolnie zagnieżdżać
-  (do limitu, patrz punkt 8).
-- `/` obcina w stronę zera: `-7 / 2` = -3.
-- `%` ma znak dzielnej: `-7 % 2` = -1, `7 % -2` = 1 (jak w C).
-- Dzielenie i reszta przez zero to błąd.
+  jako `-9223372036854775807 - 1`. Brak liczb ułamkowych, `1e3`, zapisu szesnastkowego.
+- Unarne minusy i plusy można łączyć: `--5` = 5, `- 5` = -5, `2*-3` = -6.
+  Minus wiąże tylko najbliższy argument: `-2 * 3` to `(-2) * 3`.
+- `/` obcina w stronę zera: `-7 / 2` = -3. `%` ma znak dzielnej:
+  `-7 % 2` = -1, `7 % -2` = 1 (jak w C). Dzielenie i reszta przez zero to błąd.
 - Przepełnienie to błąd, a nie zawinięcie: `9223372036854775807 + 1`,
   `4294967296 * 4294967296`, `-(-9223372036854775807 - 1)`,
-  `(-9223372036854775807 - 1) / -1`.
-  Wyjątek: `(-9223372036854775807 - 1) % -1` = 0.
+  `(-9223372036854775807 - 1) / -1`. Wyjątek: `(-9223372036854775807 - 1) % -1` = 0.
+- Porównanie daje 1 (prawda) albo 0 (fałsz). Łańcuch `a < b < c` znaczy
+  `a < b and b < c`, przy czym `b` jest liczone raz, a `c` tylko wtedy,
+  gdy `a < b` jest prawdą. Można mieszać operatory: `1 < 2 > 0` = 1.
+- `and` i `or` dają 1 albo 0 i liczą prawy argument tylko w razie potrzeby:
+  `0 and 1 / 0` = 0 i `1 or 1 / 0` = 1 (bez błędu).
+- `not x` daje 1, gdy `x` = 0, inaczej 0. `not` ma niższy priorytet niż
+  porównania: `not x == 5` znaczy `not (x == 5)`. `not` może stać tylko na
+  początku wyrażenia, po `and`/`or`, po innym `not` albo po `(`:
+  `1 + not 0` to błąd, `1 + (not 0)` = 2.
+- Kolejność liczenia: od lewej do prawej. Pierwszy błąd w tej kolejności
+  kończy program.
 
 Przykłady:
 
@@ -123,102 +208,152 @@ Przykłady:
 |-----------|-------|
 | `2 + 3 * 4` | 14 |
 | `(2 + 3) * 4` | 20 |
-| `100 / 10 / 5` | 2 |
-| `-(3 - 10)` | 7 |
+| `10 - 4 - 3` | 3 |
 | `5 - - 5` | 10 |
-| `  1+2   ` | 3 |
-| `((((((1))))))` | 1 |
+| `0 < 5 < 10` | 1 |
+| `3 >= 3 > 2 <= 2` | 1 |
+| `not 0 or 0 and 1` | 1 |
+| `-(1 < 2)` | -1 |
 
-## 6. Błędy
+## 7. Zmienne
 
-Każdy błąd kończy program komunikatem na stderr i kodem wyjścia 1. Błędy
-w programie mają numer linii (liczony od 1, wliczając puste linie i komentarze):
+- Nazwa: litery ASCII, cyfry i `_`, nie zaczyna się od cyfry. Wielkość liter
+  ma znaczenie (`x` i `X` to różne zmienne).
+- Słowa zarezerwowane: `print`, `calc`, `if`, `else`, `while`, `break`,
+  `continue`, `and`, `or`, `not`.
+- Jedna przestrzeń nazw na cały program (bloki nie tworzą nowych zmiennych).
+  Zmienna przypisana wewnątrz `if` istnieje też po nim.
+- Zmienna musi dostać wartość, zanim zostanie użyta:
+  - gdy w tekście programu przed użyciem nie ma żadnego przypisania tej
+    zmiennej, program jest odrzucany przed uruchomieniem:
+    `nieznana zmienna 'x'`;
+  - gdy przypisanie jest wcześniej w tekście, ale się nie wykonało (np. było
+    w pominiętej gałęzi `if`), program kończy się w trakcie:
+    `zmienna 'x' nie ma jeszcze wartości`.
+- Najwyżej 65 536 różnych zmiennych.
+
+## 8. Błędy
+
+Każdy błąd kończy program komunikatem na stderr i kodem wyjścia 1:
 
 ```
 fih: błąd w linii 2: dzielenie przez zero
 ```
 
-Pełna lista komunikatów błędów w programie:
+Numer linii liczy się od 1, wliczając puste linie i komentarze.
+
+### Błędy wykrywane przed uruchomieniem
+
+Cały plik jest sprawdzany, zanim program zacznie działać. Przy takim błędzie
+program nie wypisuje niczego, a `fih build` nie tworzy pliku wynikowego.
+Zgłaszany jest pierwszy błąd w pliku.
 
 | komunikat | przykład |
 |-----------|----------|
-| `nieznana instrukcja (znane: print, calc)` | `pisz("x")`, `Print("x")`, `PRINT("x")` |
-| `nieoczekiwany znak na początku instrukcji` | `5print("a")` |
-| `oczekiwano '(' po nazwie instrukcji` | `print "x"` |
-| `oczekiwano napisu w cudzysłowie` | `calc(2 + 2)` |
+| `nieoczekiwany znak na początku instrukcji` | `5print("a")`, `and = 1` |
+| `nieznana instrukcja (znane: print, calc)` | `pisz("x")`, `Print("x")` |
+| `oczekiwano '(' po nazwie instrukcji` | `print "x"`, `print = 5` |
+| `oczekiwano napisu w cudzysłowie` | `print(2)` |
 | `oczekiwano ')' po napisie` | `print("abc"` |
+| `oczekiwano ')' po wyrażeniu` | `calc(1 + 2` |
 | `niezamknięty napis` | `print("abc)` |
 | `nieznana sekwencja ucieczki (znane: \n \t \\ \")` | `print("a\qb")` |
-| `nieoczekiwane znaki po instrukcji` | `print("a") print("b")`, `print("x");` |
-| `niekompletne wyrażenie` | `calc("")`, `calc("2 *")` |
-| `nieoczekiwany znak w wyrażeniu` | `calc("2 + x")`, `calc("2 3")`, `calc("2 + 3)")`, `calc("1e3")` |
-| `brak ')' w wyrażeniu` | `calc("(2 + 3")` |
-| `dzielenie przez zero` | `calc("1 / 0")`, `calc("5 % (2 - 2)")` |
-| `liczba za duża (max 9223372036854775807)` | `calc("9223372036854775808")` |
-| `przepełnienie: wynik poza zakresem liczb 64-bitowych` | `calc("9223372036854775807 + 1")` |
-| `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (patrz punkt 8) |
+| `nieoczekiwane znaki po instrukcji` | `print("a") print("b")`, `if 1 { x = 1` |
+| `oczekiwano '=' po nazwie zmiennej` | `x == 1`, `x` |
+| `oczekiwano '{' na końcu linii` | `if x > 0`, `} else x` |
+| `'}' bez otwartego bloku` | `}` na początku programu |
+| `niezamknięty blok: brak '}'` | `if 1 {` bez `}` (numer linii otwarcia bloku) |
+| `else bez if` | `else {`, `} else {` po `while` albo po `else` |
+| `break poza pętlą` / `continue poza pętlą` | `break` poza `while` |
+| `nieznana zmienna 'x'` | `calc(x)` bez wcześniejszego `x = ...` |
+| `niekompletne wyrażenie` | `calc("")`, `x = 2 *` |
+| `nieoczekiwany znak w wyrażeniu` | `calc(2 3)`, `calc(1e3)`, `calc(1 + not 0)` |
+| `brak ')' w wyrażeniu` | `calc((2 + 3)` |
+| `liczba za duża (max 9223372036854775807)` | `calc(9223372036854775808)` |
+| `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (punkt 10) |
+| `za dużo zmiennych (max 65536)` | 65 537. nowa zmienna |
+| `bloki zbyt głęboko zagnieżdżone (max 65536)` | 65 537 bloków jeden w drugim |
 
-Błędy bez numeru linii (`fih: błąd: ...`): `nie można otworzyć pliku`,
-`nie można wczytać pliku`, `nie można zapisać wyjścia` (np. pełny dysk,
-zamknięty potok), `brak pamięci`, `plik źródłowy zmienił się (skrócił) podczas
-wykonania`, `nie można zapisać pliku wynikowego`, `plik wynikowy nadpisałby
-plik źródłowy`, `plik nie ma rozszerzenia .fh — podaj nazwę wyniku: -o nazwa`,
-`za długa ścieżka`.
+### Błędy w trakcie działania
+
+Program wypisuje wszystko, co policzył przed błędem, potem komunikat.
+`fih build` tworzy plik wynikowy, a skompilowany program kończy się tym samym
+wyjściem, komunikatem i kodem co `fih program.fh`.
+
+| komunikat | przykład |
+|-----------|----------|
+| `dzielenie przez zero` | `calc(1 / 0)`, `x %= 0` |
+| `przepełnienie: wynik poza zakresem liczb 64-bitowych` | `calc(9223372036854775807 + 1)` |
+| `zmienna 'x' nie ma jeszcze wartości` | `if 0 {` … `x = 1` … `}`, potem `calc(x)` |
+
+### Błędy bez numeru linii
+
+`fih: błąd: ...`: `nie można otworzyć pliku`, `nie można wczytać pliku`,
+`nie można zapisać wyjścia` (np. pełny dysk, zamknięte stdout), `brak pamięci`,
+`plik źródłowy zmienił się (skrócił) podczas wykonania`, `nie można zapisać
+pliku wynikowego`, `plik wynikowy nadpisałby plik źródłowy`, `plik nie ma
+rozszerzenia .fh — podaj nazwę wyniku: -o nazwa`, `za długa ścieżka`.
+Skompilowany program też zgłasza `nie można zapisać wyjścia` z kodem 1.
 
 Implementacja nigdy nie kończy się awarią (sygnałem). Każda sytuacja kończy się
-wynikiem albo komunikatem `fih: błąd...`.
+wynikiem albo komunikatem `fih: błąd...`. Wyjątek: zamknięty potok (np.
+`fih p.fh | head -1`) kończy program sygnałem SIGPIPE, jak każdy program w Linuksie.
 
-## 7. Uruchamianie
+## 9. Uruchamianie
 
 ```sh
-./fih program.fh                  # interpretacja
+./fih program.fh                  # uruchomienie
 ./fih build program.fh            # kompilacja do ./program
 ./fih build program.fh -o nazwa   # kompilacja do ./nazwa
-echo 'calc("6*7")' | ./fih /dev/stdin
+echo 'calc(6*7)' | ./fih /dev/stdin
 ./fih --help                      # opis użycia na stdout (także -h)
-./fih --version                   # wypisuje: fih 0.1.1
+./fih --version                   # wypisuje: fih 0.2.0
 ```
 
 Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na stderr).
 
-### Interpretacja
+- `fih program.fh` kompiluje program do kodu maszynowego w pamięci i od razu
+  go uruchamia (JIT). Nie powstaje żaden plik.
+- `fih build` zapisuje ten sam kod jako statyczny plik ELF x86-64 bez
+  bibliotek, uruchamiany bez `fih`. Oba tryby dają identyczne wyjście,
+  komunikaty i kody wyjścia.
+- Programy, które mają tylko `print` i `calc` ze stałymi (jak w wersji 0.1),
+  są wyliczane od razu przez szybki interpreter, a `fih build` zapisuje gotowy
+  wynik. Pliki takich programów od 512 KB są liczone na wszystkich rdzeniach.
+  Wynik jest ten sam co w zwykłym trybie.
+- Kod maszynowy: zmienne leżą w pamięci; dzielenie przez stałą jest
+  zamieniane na mnożenie; stałe wyrażenia są liczone podczas kompilacji.
 
-Program jest wykonywany linia po linii. Gdy w linii jest błąd, wyjście
-wcześniejszych linii zostaje wypisane, potem pojawia się komunikat błędu.
+## 10. Limity
 
-### Kompilacja (`build`)
-
-- Cały program jest sprawdzany i wyliczany w czasie kompilacji. Wyniki `calc`
-  są liczone wtedy, a skompilowany program tylko wypisuje gotowy tekst.
-- Gdy w programie jest jakikolwiek błąd, kompilacja kończy się tym samym
-  komunikatem co interpretacja (z numerem linii) i plik wynikowy nie powstaje.
-  Niepełny plik wynikowy (np. przy pełnym dysku) jest usuwany.
-- Wynik to statyczny plik ELF x86-64 bez bibliotek, uruchamiany bez `fih`.
-
-### Duże programy
-
-Pliki od 512 KB są wykonywane na wszystkich rdzeniach: plik jest dzielony na
-granicach linii, każdy kawałek liczy osobny proces, a wyniki są wypisywane po
-kolei. Wyjście i komunikaty błędów są identyczne jak przy wykonaniu po kolei.
-Gdy nie da się utworzyć procesów (limit procesów, pamięci), program jest
-wykonywany po kolei.
-
-## 8. Limity
-
-- Liczby: 64 bity ze znakiem (punkt 5).
-- Głębokość nawiasów w `calc`: nawiasy mogą zużyć najwyżej 1/4 limitu stosu
-  (`ulimit -s`). Przy domyślnym stosie 8 MB to 21 845 poziomów. Ponad limit
+- Liczby: 64 bity ze znakiem (punkt 6).
+- Głębokość nawiasów: nawiasy mogą zużyć najwyżej 1/4 limitu stosu
+  (`ulimit -s`). Przy domyślnym stosie 8 MB to 21 846 poziomów. Ponad limit
   pojawia się błąd `wyrażenie zbyt głęboko zagnieżdżone`, a nie awaria.
-- Długość linii i napisów: bez stałego limitu (testowane z napisem 20 MB).
+  W bardzo złożonych wyrażeniach (wiele poziomów priorytetu w każdym
+  nawiasie) limit może być mniejszy.
+- Zmienne: 65 536. Zagnieżdżenie bloków: 65 536.
+- Długość linii, napisów i programu: bez stałego limitu (testowane z napisem
+  20 MB i programem 3 MB).
 - Plik źródłowy jest mapowany do pamięci (`mmap`). Skrócenie pliku w trakcie
-  wykonania daje błąd, a nie awarię.
+  kompilacji daje błąd, a nie awarię.
 
-## 9. Czego nie ma w wersji 0.1
+## 11. Czego nie ma w wersji 0.2
 
-Fih 0.1 nie ma: zmiennych, typów innych niż liczba całkowita i napis, porównań
-i operatorów logicznych, `if`/`else`, pętli, funkcji, tablic, operacji na
-napisach, wejścia (stdin, argumenty), importu innych plików i komentarzy
-blokowych. Program w Fih to ciąg niezależnych instrukcji `print` i `calc`
-wykonywanych od góry do dołu.
+Fih 0.2 nie ma: napisów w zmiennych (`print` przyjmuje tylko napis w
+cudzysłowie), funkcji, tablic, operacji na napisach, wejścia (stdin,
+argumenty), importu innych plików, komentarzy blokowych, pętli `for`.
+Plan dalszych wersji: [ROADMAP.md](ROADMAP.md).
 
-Zmienne, `if`/`else` i `while` są zaplanowane na wersję 0.2 ([ROADMAP.md](ROADMAP.md)).
+## 12. Zmiany wobec wersji 0.1
+
+Każdy poprawny program 0.1 działa w 0.2 tak samo. Zmieniło się zachowanie
+programów z błędami:
+
+- Błąd składni jest zgłaszany przed uruchomieniem, więc wcześniejsze linie
+  niczego już nie wypisują (w 0.1 wypisywały).
+- `fih build` przyjmuje programy z błędem w trakcie działania (np.
+  `calc("1/0")`); błąd zgłasza skompilowany program (w 0.1 kompilacja się
+  nie udawała).
+- `calc("2 + x")` zgłasza `nieznana zmienna 'x'` zamiast
+  `nieoczekiwany znak w wyrażeniu`; `calc(2 + 2)` jest poprawne (wypisuje 4).

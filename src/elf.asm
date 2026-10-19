@@ -8,7 +8,7 @@
 default rel
 
 global write_elf, write_file2
-extern write_fd, die_noline
+extern write_fd, die_noline, out_held_len, out_held_write
 
 %define BASE      0x400000
 %define EHDR_SIZE 64
@@ -83,11 +83,11 @@ stat2:   resb 144
 
 section .text
 
-; write_elf(rdi=ścieżka wyniku, rsi=dane, rdx=długość danych)
+; write_elf(rdi=ścieżka wyniku) — dane: wyjście zebrane w pamięci (io.asm)
 write_elf:
     push rdi
-    push rsi
-    push rdx
+    call out_held_len
+    push rax
     ; kopia szablonu z uzupełnionymi długościami
     lea rsi, [tpl]
     lea rdi, [hdr_buf]
@@ -99,14 +99,15 @@ write_elf:
     mov [rcx + filesz - tpl], rax
     mov [rcx + memsz - tpl], rax
     mov [rcx + datalen - tpl], r8
-    pop rcx
     pop rdi
     lea rsi, [hdr_buf]
     mov edx, TPL_SIZE
+    mov rcx, -1
     jmp write_file2
 
 ; write_file2(rdi=ścieżka, rsi=część 1, rdx=długość, rcx=część 2, r8=długość)
-; — zapisuje plik wykonywalny (rwxr-xr-x); przy błędzie usuwa niepełny plik
+; — zapisuje plik wykonywalny (rwxr-xr-x); przy błędzie usuwa niepełny plik.
+; rcx = -1: część 2 to wyjście zebrane w pamięci (out_held_write)
 write_file2:
     push rbx
     push r12
@@ -155,10 +156,17 @@ write_file2:
     call write_fd
     test rax, rax
     jnz .write_fail
+    cmp r12, -1
+    jne .part2
+    mov edi, ebx
+    call out_held_write
+    jmp .part2_done
+.part2:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
     call write_fd
+.part2_done:
     test rax, rax
     jnz .write_fail
 

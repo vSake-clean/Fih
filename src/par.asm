@@ -4,7 +4,8 @@
 ; na granicach linii (N = liczba dostępnych rdzeni, max MAXP). Kawałek 0
 ; wykonuje rodzic, a każdy następny proces potomny (fork) wprost do pamięci
 ; dzielonej (MAP_SHARED): [długość wyniku: 8 B][wynik]. Rodzic czeka na
-; potomków po kolei i wypisuje ich wyniki bez kopiowania.
+; potomków po kolei i dołącza ich wyniki do wyjścia bez kopiowania (io.asm,
+; out_add_raw); całość jest wypisywana na końcu.
 ; Gdy kawałek potomka zawiera błąd (albo fork się nie uda), rodzic wykonuje
 ; resztę programu sam, od początku tego kawałka — wyjście i komunikat błędu
 ; (z numerem linii) są więc dokładnie takie jak przy wykonaniu po kolei.
@@ -12,7 +13,7 @@
 default rel
 
 global run_program
-extern run, out_flush, out_raw, out_to_fixed_memory, mem_len
+extern run, out_add_raw, out_to_fixed_memory, outlen
 extern quiet_errors, child_pids, kill_children
 
 %define PAR_MIN (512 * 1024)    ; mniejsze programy: zwykłe wykonanie
@@ -140,16 +141,11 @@ run_program:
     js .fallback
     cmp dword [status], 0       ; zakończony normalnie z kodem 0
     jne .fallback
-    call out_flush
     lea rcx, [shm]
     mov rbp, [rcx + r14*8]
-    lea rsi, [rbp + 8]
-    mov rdx, [rbp]
-    call out_raw
-    mov eax, SYS_MUNMAP
-    mov rdi, rbp
-    mov rsi, SHM_SIZE
-    syscall
+    lea rsi, [rbp + 8]          ; wynik potomka zostaje w pamięci dzielonej
+    mov rdx, [rbp]              ; i trafi na wyjście bez kopiowania
+    call out_add_raw
     inc r14d
     jmp .collect
 
@@ -219,8 +215,7 @@ run_program:
     sub rsi, rdi
     mov edx, 1
     call run
-    call out_flush
-    mov rax, [mem_len]
+    mov rax, [outlen]
     mov [rbp], rax
     mov eax, SYS_EXIT_GROUP
     xor edi, edi

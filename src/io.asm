@@ -3,21 +3,36 @@
 default rel
 
 %define OUTSZ 65536
+%define MAXSEG 32
+%define SEG_MEM (1 << 63)       ; znacznik kawałka "fragment bufora wyjścia"
+%define HUGE (2 << 20)          ; duża strona
+%define SYS_MADVISE 28
+%define MADV_HUGEPAGE 14
 
 global write_fd, write_all, out_flush, out_write, out_write_nl, out_byte, out_int, out_int_nl, fmt_int
-global die, die_noline, out_to_memory, mem_ptr, mem_len
-global out_raw, quiet_errors, child_pids, kill_children, out_to_fixed_memory
-global die_name, out_reset, bail_rsp, bail_ip
+global die, die_noline, out_to_memory, out_held_write, out_held_len, out_add_raw, outlen
+global quiet_errors, child_pids, kill_children, out_to_fixed_memory
+global die_name, out_reset, bail_rsp, bail_ip, out_held_stdout
 extern cur_line
 
+; Wyjście ma dwa tryby:
+;   strumień — bufor 64 KB (outbuf) opróżniany na stdout,
+;   pamięć   — wyjście zostaje w pamięci (obuf rośnie albo, w procesie
+;              potomnym, ma stałą wielkość) i jest wypisywane na końcu jako
+;              lista kawałków: fragmenty obuf i gotowe bufory potomków (par.asm).
+; Szybka ścieżka jest ta sama: obuf/ocap wskazują bieżący bufor.
+
 section .bss
+obuf:    resq 1             ; bieżący bufor wyjścia (ustawia out_reset przy starcie)
+ocap:    resq 1             ; jego pojemność
+ocap24:  resq 1             ; pojemność - 24 (miejsce na liczbę)
 outbuf:  resb OUTSZ
 outlen:  resq 1
-to_mem:  resq 1             ; 1 = wyjście trafia do pamięci (tryb build)
-mem_ptr: resq 1
-mem_len: resq 1
-mem_cap: resq 1
-mem_fixed: resq 1           ; 1 = bufor stałej wielkości (nie wolno go powiększać)
+direct:  resq 1             ; 1 = tryb pamięci
+fixedm:  resq 1             ; 1 = bufor stałej wielkości (nie wolno go powiększać)
+segs:    resq 2 * MAXSEG    ; kawałki: dq wskaźnik (albo SEG_MEM | przesunięcie w obuf), dq długość
+nseg:    resq 1
+seg_start: resq 1           ; początek jeszcze niezamkniętego fragmentu obuf
 quiet_errors: resq 1        ; 1 w procesie potomnym: błąd = tylko kod wyjścia 3
 child_pids:   resq MAXP     ; procesy potomne (par.asm) do zabicia przy błędzie
 bail_rsp:     resq 1        ; != 0: błąd w programie nie kończy fih, tylko wraca
@@ -97,139 +112,267 @@ write_all:
     mov edi, 1
     syscall
 
-; out_to_memory() — od teraz wyjście programu zbierane jest w pamięci
-; (mem_ptr/mem_len) zamiast trafiać na stdout
+; set_buf(rdi=bufor, rsi=pojemność) — nowy bieżący bufor wyjścia
+set_buf:
+    mov [obuf], rdi
+    mov [ocap], rsi
+    sub rsi, 24
+    mov [ocap24], rsi
+    ret
+
+; out_to_memory(rdi=przewidywana długość wyjścia) — od teraz wyjście zostaje
+; w pamięci. Bufor jest od razu rezerwowany (bez przydziału stron) i wyrównany
+; do 2 MB, żeby jądro mogło użyć dużych stron: mniej błędów stron przy zapisie.
 out_to_memory:
-    mov qword [to_mem], 1
+    lea rsi, [rdi + OUTSZ + HUGE - 1]
+    and rsi, -HUGE
+    push rsi
+    add rsi, HUGE               ; zapas na wyrównanie
+    mov eax, SYS_MMAP
+    xor edi, edi
+    mov edx, PROT_READ | PROT_WRITE
+    mov r10d, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE
+    mov r8, -1
+    xor r9d, r9d
+    syscall
+    cmp rax, -4095
+    jae out_nomem
+    add rax, HUGE - 1
+    and rax, -HUGE
+    mov rdi, rax
+    mov rsi, [rsp]
+    mov eax, SYS_MADVISE        ; błąd madvise nie przeszkadza
+    mov edx, MADV_HUGEPAGE
+    push rdi
+    syscall
+    pop rdi
+    pop rsi
+    call set_buf
+    xor eax, eax
+    mov [outlen], rax
+    mov [nseg], rax
+    mov [seg_start], rax
+    mov [fixedm], rax
+    mov qword [direct], 1
     ret
 
 ; out_to_fixed_memory(rdi=bufor, rsi=pojemność) — wyjście do podanego bufora;
 ; przepełnienie kończy program błędem (w potomku: kodem 3)
 out_to_fixed_memory:
-    mov qword [to_mem], 1
-    mov [mem_ptr], rdi
-    mov [mem_cap], rsi
-    mov qword [mem_len], 0
-    mov qword [mem_fixed], 1
+    call set_buf
+    xor eax, eax
+    mov [outlen], rax
+    mov [nseg], rax
+    mov [seg_start], rax
+    mov qword [fixedm], 1
+    mov qword [direct], 1
     ret
 
-; out_raw/sink(rsi=dane, rdx=długość) — wysyła gotowe bajty na stdout albo
-; do pamięci, z pominięciem bufora (wywołujący najpierw robi out_flush)
-out_raw:
-sink:
-    cmp qword [to_mem], 0
-    jne mem_append
-    mov edi, STDOUT
-    jmp write_all
+; out_reset() — porzuca zebrane wyjście, wraca do strumienia na stdout
+out_reset:
+    xor eax, eax
+    mov [direct], rax
+    mov [fixedm], rax
+    mov [outlen], rax
+    mov [nseg], rax
+    mov [seg_start], rax
+    lea rdi, [outbuf]
+    mov esi, OUTSZ
+    jmp set_buf
 
-; mem_append(rsi=dane, rdx=długość) — dopisuje do rosnącego bufora (mmap/mremap)
-mem_append:
-    mov rax, [mem_len]
-    add rax, rdx
-    cmp rax, [mem_cap]
-    jbe .copy
-    cmp qword [mem_fixed], 0
-    jne .nomem
+; out_room(rsi=potrzebne bajty) — robi miejsce w buforze: w trybie strumienia
+; opróżnia go, w trybie pamięci powiększa (mremap); zachowuje rdi, rsi
+out_room:
+    cmp qword [direct], 0
+    jne .mem
+    push rdi
     push rsi
+    call out_flush
+    pop rsi
+    pop rdi
+    ret
+.mem:
+    cmp qword [fixedm], 0
+    jne out_nomem
+    push rdi
+    push rsi
+    mov rdx, [ocap]
+    add rdx, rdx
+    mov rax, [outlen]
+    lea rax, [rax + rsi + OUTSZ]
+    cmp rdx, rax
+    cmovb rdx, rax
+    add rdx, 4095
+    and rdx, -4096
     push rdx
-    push r12
-    mov r12, [mem_cap]
-    shl r12, 1
-    cmp r12, rax
-    cmovb r12, rax
-    mov ecx, 1 << 20
-    cmp r12, rcx
-    cmovb r12, rcx
-    add r12, 4095
-    and r12, -4096
-    mov rdi, [mem_ptr]
-    test rdi, rdi
-    jz .fresh
     mov eax, SYS_MREMAP
-    mov rsi, [mem_cap]
-    mov rdx, r12
+    mov rdi, [obuf]
+    mov rsi, [ocap]
     mov r10d, MREMAP_MAYMOVE
     syscall
-    jmp .check
-.fresh:
-    mov eax, SYS_MMAP
-    xor edi, edi
-    mov rsi, r12
-    mov edx, PROT_READ | PROT_WRITE
-    mov r10d, MAP_PRIVATE | MAP_ANONYMOUS
-    mov r8, -1
-    xor r9d, r9d
-    syscall
-.check:
-    cmp rax, -4095
-    jae .nomem
-    mov [mem_ptr], rax
-    mov [mem_cap], r12
-    pop r12
-    pop rdx
     pop rsi
-.copy:
-    mov rdi, [mem_ptr]
-    add rdi, [mem_len]
-    mov rcx, rdx
-    rep movsb
-    add [mem_len], rdx
+    cmp rax, -4095
+    jae out_nomem
+    mov rdi, rax
+    call set_buf
+    pop rsi
+    pop rdi
     ret
-.nomem:
-    mov qword [to_mem], 0
-    mov qword [outlen], 0
+
+out_nomem:
+    xor eax, eax
+    mov [direct], rax
+    mov [outlen], rax
     lea rdi, [msg_nomem]
     mov esi, msg_nomem_len
     jmp die_noline
 
-; out_flush() — opróżnia bufor wyjścia
+; out_flush() — w trybie strumienia opróżnia bufor na stdout (w trybie
+; pamięci nic nie robi: wyjście czeka na out_held_write)
 out_flush:
+    cmp qword [direct], 0
+    jne .done
     mov rdx, [outlen]
     test rdx, rdx
     jz .done
-    lea rsi, [outbuf]
-    call sink
+    mov rsi, [obuf]
     mov qword [outlen], 0
+    push rdi
+    mov edi, STDOUT
+    call write_all
+    pop rdi
 .done:
+    ret
+
+; out_add_raw(rsi=dane, rdx=długość) — dopisuje gotowy bufor (wynik procesu
+; potomnego) do wyjścia bez kopiowania; tylko w trybie pamięci
+out_add_raw:
+    call close_seg
+    mov rax, [nseg]
+    cmp rax, MAXSEG
+    jae out_nomem
+    shl rax, 4
+    lea rcx, [segs]
+    mov [rcx + rax], rsi
+    mov [rcx + rax + 8], rdx
+    inc qword [nseg]
+    ret
+
+; close_seg — zamyka bieżący fragment obuf jako kawałek wyjścia
+close_seg:
+    mov rax, [outlen]
+    mov rcx, [seg_start]
+    cmp rax, rcx
+    je .done
+    mov [seg_start], rax
+    sub rax, rcx                ; długość
+    mov r8, [nseg]
+    cmp r8, MAXSEG
+    jae out_nomem
+    shl r8, 4
+    lea r9, [segs]
+    bts rcx, 63                 ; SEG_MEM | przesunięcie
+    mov [r9 + r8], rcx
+    mov [r9 + r8 + 8], rax
+    inc qword [nseg]
+.done:
+    ret
+
+; out_held_len() -> rax = długość całego zebranego wyjścia
+out_held_len:
+    call close_seg
+    xor eax, eax
+    mov rcx, [nseg]
+    lea rdx, [segs]
+.loop:
+    test rcx, rcx
+    jz .done
+    add rax, [rdx + 8]
+    add rdx, 16
+    dec rcx
+    jmp .loop
+.done:
+    ret
+
+; out_held_write(edi=fd) -> rax = 0 albo -errno — zapisuje zebrane wyjście
+out_held_write:
+    push rbx
+    push r12
+    push r13
+    mov r13d, edi
+    call close_seg
+    xor ebx, ebx
+.loop:
+    cmp rbx, [nseg]
+    jae .ok
+    mov r12, rbx
+    shl r12, 4
+    lea rax, [segs]
+    add r12, rax
+    mov rsi, [r12]
+    mov rdx, [r12 + 8]
+    btr rsi, 63
+    jnc .raw
+    add rsi, [obuf]
+.raw:
+    mov edi, r13d
+    call write_fd
+    test rax, rax
+    jnz .ret
+    inc rbx
+    jmp .loop
+.ok:
+    xor eax, eax
+.ret:
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+; out_held_stdout() — zapisuje zebrane wyjście na stdout; przy błędzie
+; komunikat i kod 1
+out_held_stdout:
+    mov edi, STDOUT
+    call out_held_write
+    test rax, rax
+    jnz write_all.fail
     ret
 
 ; out_write(rdi=dane, rsi=długość)
 out_write:
     mov rax, [outlen]
     lea rcx, [rax+rsi]
-    cmp rcx, OUTSZ
+    cmp rcx, [ocap]
     jbe .copy
-    push rdi
-    push rsi
-    call out_flush
-    pop rsi
-    pop rdi
+    call out_room
+    cmp qword [direct], 0
+    jne .copy
     cmp rsi, OUTSZ
     jb .copy
-    ; za duże na bufor — wysyłamy bezpośrednio
+    ; strumień, za duże na bufor — wysyłamy bezpośrednio
     mov rdx, rsi
     mov rsi, rdi
-    jmp sink
+    mov edi, STDOUT
+    jmp write_all
 .copy:
     mov rax, [outlen]
     mov rcx, rsi
     add [outlen], rsi
     mov rsi, rdi
-    lea rdi, [outbuf]
+    mov rdi, [obuf]
     add rdi, rax
     jmp copy_bytes
 
 ; out_byte(dil=bajt)
 out_byte:
     mov rax, [outlen]
-    cmp rax, OUTSZ
+    cmp rax, [ocap]
     jb .put
-    push rdi
-    call out_flush
-    pop rdi
-    xor eax, eax
+    mov esi, 1
+    call out_room
+    mov rax, [outlen]
 .put:
-    lea rcx, [outbuf]
+    mov rcx, [obuf]
     mov [rcx+rax], dil
     inc rax
     mov [outlen], rax
@@ -284,14 +427,13 @@ fmt_int:
 ; najpierw liczba cyfr (bsr * log10(2) + tablica potęg 10), potem cyfry od końca
 out_int_nl:
     mov rax, [outlen]
-    cmp rax, OUTSZ - 24
+    cmp rax, [ocap24]
     jbe .room
-    push rdi
-    call out_flush
-    pop rdi
-    xor eax, eax
+    mov esi, 24
+    call out_room
+    mov rax, [outlen]
 .room:
-    lea rsi, [outbuf]
+    mov rsi, [obuf]
     add rsi, rax            ; miejsce zapisu
     mov rax, rdi
     test rax, rax
@@ -343,8 +485,7 @@ out_int_nl:
     shr rax, cl
     mov [rsi], rax
     mov byte [rdi], 10
-    lea rax, [outbuf]
-    sub rdi, rax
+    sub rdi, [obuf]
     inc rdi
     mov [outlen], rdi
     ret
@@ -383,8 +524,7 @@ out_int_nl:
     lea rdi, [rsi + 1]
     mov byte [rdi], 10
 .done:
-    lea rax, [outbuf]
-    sub rdi, rax
+    sub rdi, [obuf]
     inc rdi
     mov [outlen], rdi
     ret
@@ -393,10 +533,10 @@ out_int_nl:
 out_write_nl:
     mov rax, [outlen]
     lea rcx, [rax + rsi + 1]
-    cmp rcx, OUTSZ
+    cmp rcx, [ocap]
     ja .slow
     mov [outlen], rcx
-    lea rdx, [outbuf]
+    mov rdx, [obuf]
     add rdx, rax
     mov byte [rdx + rsi], 10
     mov rcx, rsi
@@ -509,14 +649,6 @@ die_hook:
     mov eax, SYS_EXIT_GROUP
     mov edi, 3
     syscall
-
-; out_reset() — porzuca zebrane wyjście, od teraz wyjście na stdout
-out_reset:
-    xor eax, eax
-    mov [to_mem], rax
-    mov [outlen], rax
-    mov [mem_len], rax
-    ret
 
 ; die(rdi=komunikat, rsi=długość) — "fih: błąd w linii N: komunikat", exit 1
 die:

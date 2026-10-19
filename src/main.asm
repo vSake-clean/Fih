@@ -13,7 +13,7 @@
 default rel
 
 global _start
-extern run_program, out_flush, out_to_memory, mem_ptr, mem_len, out_reset
+extern run_program, out_to_memory, out_reset, out_held_stdout
 extern write_all, write_elf, die_noline, expr_init, bail_rsp, bail_ip
 extern comp_compile, comp_run_jit, comp_write_elf
 
@@ -65,6 +65,7 @@ str_version:    db "--version", 0
 
 section .text
 _start:
+    call out_reset
     call expr_init
     ; plik jest mapowany (mmap); gdy ktoś go skróci w trakcie, odczyt daje
     ; SIGBUS — zamiast awarii zgłaszamy zwykły błąd
@@ -151,10 +152,7 @@ _start:
     call run_fast
     test eax, eax
     jnz .build_comp
-    call out_flush
     mov rdi, r15
-    mov rsi, [mem_ptr]
-    mov rdx, [mem_len]
     call write_elf
     jmp .exit_ok
 .build_comp:
@@ -174,11 +172,7 @@ _start:
     call run_fast
     test eax, eax
     jnz do_jit
-    call out_flush
-    mov edi, STDOUT
-    mov rsi, [mem_ptr]
-    mov rdx, [mem_len]
-    call write_all
+    call out_held_stdout
 .exit_ok:
     mov eax, SYS_EXIT
     xor edi, edi
@@ -245,7 +239,7 @@ do_jit:
     call comp_compile
     jmp comp_run_jit
 
-; run_fast -> eax = 0: program wykonał silnik 0.1, wynik w pamięci (mem_ptr);
+; run_fast -> eax = 0: program wykonał silnik 0.1, wynik w pamięci (io.asm);
 ; eax = 1: program wymaga kompilatora (wyjście porzucone)
 run_fast:
     push rbx                ; powrót przez bail_ip omija epilogi funkcji —
@@ -254,6 +248,7 @@ run_fast:
     push r13
     push r14
     push r15
+    mov rdi, [src_len]      ; wynik print/calc nie jest dłuższy niż program
     call out_to_memory
     mov [bail_rsp], rsp
     lea rax, [.bailed]
