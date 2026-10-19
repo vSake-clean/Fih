@@ -24,10 +24,32 @@ while i <= 15 {
 }
 ```
 
-**Fih 0.2** ma zmienne całkowite, `if`/`else if`/`else`, pętlę `while`,
-`break`/`continue`, porównania (także łańcuchy `0 < x < 10`), `and`/`or`/`not`
-i wypisywanie (`print`, `calc`). Nie ma jeszcze funkcji, tablic, napisów
-w zmiennych ani wczytywania danych ([ROADMAP.md](ROADMAP.md)).
+**Fih 0.3** ma zmienne całkowite, `if`/`else if`/`else`, pętlę `while`,
+`break`/`continue`, porównania (także łańcuchy `0 < x < 10`), `and`/`or`/`not`,
+wypisywanie (`print`, `write`, `calc`) i wczytywanie liczb oraz znaków
+(`input()`, `inputchar()`). Nie ma jeszcze funkcji, tablic ani napisów
+w zmiennych ([ROADMAP.md](ROADMAP.md)).
+
+Przykład programu interaktywnego — kalkulator
+([examples/kalkulator.fh](examples/kalkulator.fh)):
+
+```
+$ fih examples/kalkulator.fh
+Kalkulator Fih
+Działania: + - * / %   (q zamiast działania kończy)
+
+Podaj pierwszą liczbę: 6
+Działanie (+ - * / %): *
+Podaj drugą liczbę: 7
+Wynik: 42
+
+Podaj pierwszą liczbę: abc
+To nie jest liczba, spróbuj jeszcze raz (koniec: Ctrl+D).
+Podaj pierwszą liczbę: 1
+Działanie (+ - * / %): /
+Podaj drugą liczbę: 0
+Nie można dzielić przez zero.
+```
 
 | Dokument | Zawartość |
 |---|---|
@@ -81,7 +103,7 @@ Programy, które mają tylko `print` i `calc` ze stałymi, są wyliczane od razu
 
 Program można też podać przez potok: `echo 'calc(6*7)' | ./fih /dev/stdin`.
 
-## Język (wersja 0.2)
+## Język (wersja 0.3)
 
 Pełna specyfikacja (gramatyka, semantyka, wszystkie błędy, limity) jest w
 [SPEC.md](SPEC.md). Ten plik można dać modelowi AI do przeczytania.
@@ -91,14 +113,17 @@ Jedna instrukcja na linię, komentarze od `#` do końca linii.
 | Instrukcja | Działanie |
 |---|---|
 | `print("...")` | wypisuje napis i znak nowej linii; sekwencje `\n` `\t` `\\` `\"` |
+| `write("...")`, `write(wyrażenie)` | jak `print`/`calc`, ale bez nowej linii |
 | `calc(wyrażenie)` | wypisuje wartość wyrażenia (także `calc("wyrażenie")`, jak w 0.1) |
 | `x = wyrażenie` | przypisanie; także `+=` `-=` `*=` `/=` `%=` |
 | `if w {` … `} else if w {` … `} else {` … `}` | warunek (prawda = różne od 0) |
 | `while w {` … `}` | pętla; `break` i `continue` |
+| `input()`, `inputchar()` | (w wyrażeniu) liczba / kod znaku z linii wejścia; `inputok()`, `eof()` |
 
 Wyrażenia: liczby całkowite 64-bit, zmienne, `+ - * / %`, nawiasy, unarny `-`,
 porównania `== != < <= > >=` (wynik 1 albo 0, łańcuchy jak w Pythonie:
-`0 < x < 10`), `and`, `or`, `not` (liczone tylko w razie potrzeby).
+`0 < x < 10`), `and`, `or`, `not` (liczone tylko w razie potrzeby), literały
+znakowe `'+'` (kod znaku).
 `/` obcina w stronę zera, `%` ma znak dzielnej (jak w C). Przepełnienie (np.
 `9223372036854775807 + 1`) i dzielenie przez zero to błędy z numerem linii,
 a nie cicho zła liczba:
@@ -123,7 +148,7 @@ Fih nigdy nie powinien skończyć się awarią. Każda sytuacja kończy się kom
 - pełny dysk, `/dev/full`, zamknięty potok; przy `build` niepełny plik wynikowy jest usuwany;
 - brak pamięci albo limit procesów: tryb wielordzeniowy przechodzi wtedy na wykonanie po kolei.
 
-Sprawdzają to `make test` (180 testów, programy w obu trybach) i `make fuzz`:
+Sprawdzają to `make test` (198 testów, programy w obu trybach) i `make fuzz`:
 
 - `tests/fuzz/oracle.py`: niezależna implementacja Fih w Pythonie (wyrocznia);
 - `tests/fuzz/fuzz2.py`: losowe programy 0.2 (zmienne, `if`, `while`, `break`,

@@ -1,4 +1,4 @@
-# Specyfikacja języka Fih (wersja 0.2)
+# Specyfikacja języka Fih (wersja 0.3)
 
 Ten plik opisuje dokładnie, jak działa język Fih i jego implementacja `fih`.
 Jest napisany tak, żeby człowiek albo model AI mógł go przeczytać i znać
@@ -9,7 +9,8 @@ w Pythonie, z którą testy porównują `fih`, jest w `tests/fuzz/oracle.py`.
 ## 1. Czym jest Fih
 
 - Fih to mały język imperatywny: zmienne całkowite, `if`/`else`, pętla
-  `while`, `break`/`continue`, wypisywanie napisów i liczb.
+  `while`, `break`/`continue`, wypisywanie napisów i liczb, wczytywanie
+  liczb i znaków ze standardowego wejścia.
 - Implementacja (`fih`) jest napisana w czystym assembly x86-64 (NASM),
   bez libc, wyłącznie na syscallach Linuksa. Działa tylko na Linuksie x86-64.
 - `fih` jest kompilatorem: program zawsze jest tłumaczony na kod maszynowy
@@ -64,10 +65,11 @@ Wyjście: liczby `2 3 5 7 11 13 17 19 23 29`, każda w osobnej linii, potem `kon
 ```ebnf
 program     = { linia } ;
 linia       = [ odstęp ] [ instrukcja [ odstęp ] ] [ komentarz ] [ "\r" ] "\n" ;
-instrukcja  = print | calc | przypisanie | if | while | koniec_bloku
+instrukcja  = print | write | calc | przypisanie | if | while | koniec_bloku
             | "break" | "continue" ;
 
 print       = "print" [ odstęp ] "(" [ odstęp ] napis [ odstęp ] ")" ;
+write       = "write" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 calc        = "calc" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 przypisanie = nazwa [ odstęp ] ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) wyrażenie ;
 if          = "if" wyrażenie "{" ;
@@ -88,14 +90,18 @@ porównanie  = suma { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) suma } ;
 suma        = iloczyn { ( "+" | "-" ) iloczyn } ;
 iloczyn     = unarny { ( "*" | "/" | "%" ) unarny } ;
 unarny      = ( "-" | "+" ) unarny | prosty ;
-prosty      = liczba | nazwa | "(" wyrażenie ")" ;
+prosty      = liczba | znak_lit | nazwa | funkcja | "(" wyrażenie ")" ;
+funkcja     = ( "input" | "inputchar" | "inputok" | "eof" ) [ odstęp ] "(" [ odstęp ] ")" ;
+znak_lit    = "'" ( drukowalny | "\n" | "\t" | "\\" | "\'" ) "'" ;  (* kod znaku *)
+drukowalny  = bajt 32..126 oprócz "'" ;
 liczba      = cyfra { cyfra } ;                     (* tylko dziesiętne *)
 nazwa       = ( litera | "_" ) { litera | cyfra | "_" } ;   (* litery ASCII *)
 ```
 
 W wyrażeniu spacje i tabulatory mogą stać między dowolnymi elementami.
 Słowa `and`, `or`, `not` muszą być osobnymi słowami (`x or y`, ale `xory` to nazwa).
-Wyrażenie bez cudzysłowu kończy się na `#` (komentarz) albo na końcu linii.
+Wyrażenie bez cudzysłowu kończy się na `#` (komentarz) albo na końcu linii;
+`'#'` (literał znakowy) nie zaczyna komentarza.
 
 ## 5. Instrukcje
 
@@ -114,6 +120,12 @@ wypisuje `x`, nie wartość zmiennej).
 
 Każda inna sekwencja (np. `\q`) to błąd. Surowy tabulator w napisie jest dozwolony.
 `print("")` wypisuje pustą linię. `print` nie przyjmuje wyrażeń: `print(2)` to błąd.
+
+### `write("napis")` i `write(wyrażenie)`
+
+Jak `print` i `calc`, ale bez znaku nowej linii na końcu: `write("Wynik: ")`
+i potem `calc(w)` dają jedną linię `Wynik: 42`. Uwaga: `write("2 + 3")`
+wypisuje tekst `2 + 3` (napis), a nie wynik — do liczb służy `write(2 + 3)`.
 
 ### `calc(wyrażenie)` i `calc("wyrażenie")`
 
@@ -202,6 +214,56 @@ Priorytety (od najwyższego):
 - Kolejność liczenia: od lewej do prawej. Pierwszy błąd w tej kolejności
   kończy program.
 
+### Literały znakowe
+
+`'c'` to kod znaku `c` (ASCII): `'+'` = 43, `'a'` = 97, `'0'` = 48. Dozwolone są
+znaki drukowalne ASCII (kody 32–126) oraz `'\n'` (10), `'\t'` (9), `'\\'`
+(92), `'\''` (39). Inne zapisy, np. `'ab'` albo `'ł'`, to błąd
+`zły zapis znaku (przykład: '+')`.
+
+### Funkcje wejścia
+
+Program czyta standardowe wejście linia po linii. Linia kończy się `\n`
+(ostatnia może nie mieć `\n`). Spacje, tabulatory i `\r` na początku i na
+końcu linii są pomijane. Przed każdym odczytem program wypisuje wszystko, co
+czeka w buforze wyjścia — pytanie z `write` jest widoczne, zanim użytkownik
+zacznie pisać.
+
+| funkcja | wynik |
+|---|---|
+| `input()` | czyta linię; gdy to liczba całkowita (`[+-]cyfry`, w zakresie 64 bitów), zwraca ją, inaczej 0 |
+| `inputchar()` | czyta linię i zwraca kod jej pierwszego znaku (bez spacji); pusta linia: 0; koniec wejścia: -1 |
+| `inputok()` | 1, gdy ostatnie `input()` przeczytało poprawną liczbę albo `inputchar()` niepustą linię; inaczej 0 (także przed pierwszym odczytem) |
+| `eof()` | 1, gdy któryś odczyt trafił na koniec wejścia (Ctrl+D, koniec pliku); inaczej 0 |
+
+- Linia długości 64 KB lub więcej jest pomijana jak zły wpis (`input()` = 0,
+  `inputok()` = 0).
+- `input()` po końcu wejścia zwraca 0, a `inputok()` = 0 i `eof()` = 1.
+- Funkcje wymagają nawiasów: `input` bez `()` to błąd
+  `oczekiwano '()' po nazwie funkcji`. Wywołanie nie może być osobną
+  instrukcją (`input()` w osobnej linii to błąd) — wynik trzeba przypisać
+  albo użyć w wyrażeniu.
+- Kolejność odczytów to kolejność liczenia (od lewej do prawej), a `and`/`or`
+  nie wywołują prawej strony, gdy nie trzeba.
+
+Przykład (kalkulator: `examples/kalkulator.fh`):
+
+```
+write("Podaj liczbę: ")
+a = input()
+while not inputok() and not eof() {
+    print("To nie jest liczba, spróbuj jeszcze raz.")
+    write("Podaj liczbę: ")
+    a = input()
+}
+write("Działanie: ")
+op = inputchar()
+if op == '*' {
+    write("Wynik: ")
+    calc(a * a)
+}
+```
+
 Przykłady:
 
 | wyrażenie | wynik |
@@ -219,8 +281,8 @@ Przykłady:
 
 - Nazwa: litery ASCII, cyfry i `_`, nie zaczyna się od cyfry. Wielkość liter
   ma znaczenie (`x` i `X` to różne zmienne).
-- Słowa zarezerwowane: `print`, `calc`, `if`, `else`, `while`, `break`,
-  `continue`, `and`, `or`, `not`.
+- Słowa zarezerwowane: `print`, `write`, `calc`, `if`, `else`, `while`,
+  `break`, `continue`, `and`, `or`, `not`, `input`, `inputchar`, `inputok`, `eof`.
 - Jedna przestrzeń nazw na cały program (bloki nie tworzą nowych zmiennych).
   Zmienna przypisana wewnątrz `if` istnieje też po nim.
 - Zmienna musi dostać wartość, zanim zostanie użyta:
@@ -271,6 +333,8 @@ Zgłaszany jest pierwszy błąd w pliku.
 | `brak ')' w wyrażeniu` | `calc((2 + 3)` |
 | `liczba za duża (max 9223372036854775807)` | `calc(9223372036854775808)` |
 | `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (punkt 10) |
+| `oczekiwano '()' po nazwie funkcji` | `x = input`, `x = input(5)` |
+| `zły zapis znaku (przykład: '+')` | `'ab'`, `'ł'`, `'a` |
 | `za dużo zmiennych (max 65536)` | 65 537. nowa zmienna |
 | `bloki zbyt głęboko zagnieżdżone (max 65536)` | 65 537 bloków jeden w drugim |
 
@@ -307,7 +371,8 @@ wynikiem albo komunikatem `fih: błąd...`. Wyjątek: zamknięty potok (np.
 ./fih build program.fh -o nazwa   # kompilacja do ./nazwa
 echo 'calc(6*7)' | ./fih /dev/stdin
 ./fih --help                      # opis użycia na stdout (także -h)
-./fih --version                   # wypisuje: fih 0.2.0
+./fih --version                   # wypisuje: fih 0.3.0
+./fih examples/kalkulator.fh      # program czytający z klawiatury
 ```
 
 Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na stderr).
@@ -338,16 +403,22 @@ Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na st
 - Plik źródłowy jest mapowany do pamięci (`mmap`). Skrócenie pliku w trakcie
   kompilacji daje błąd, a nie awarię.
 
-## 11. Czego nie ma w wersji 0.2
+## 11. Czego nie ma w wersji 0.3
 
-Fih 0.2 nie ma: napisów w zmiennych (`print` przyjmuje tylko napis w
-cudzysłowie), funkcji, tablic, operacji na napisach, wejścia (stdin,
-argumenty), importu innych plików, komentarzy blokowych, pętli `for`.
+Fih 0.3 nie ma: napisów w zmiennych (`print` przyjmuje tylko napis w
+cudzysłowie, a z wejścia można czytać tylko liczby i pojedyncze znaki),
+funkcji definiowanych przez użytkownika, tablic, operacji na napisach,
+argumentów wiersza poleceń, importu innych plików, komentarzy blokowych,
+pętli `for`.
 Plan dalszych wersji: [ROADMAP.md](ROADMAP.md).
 
-## 12. Zmiany wobec wersji 0.1
+## 12. Zmiany wobec wcześniejszych wersji
 
-Każdy poprawny program 0.1 działa w 0.2 tak samo. Zmieniło się zachowanie
+0.3: nowe słowa zarezerwowane (`write`, `input`, `inputchar`, `inputok`,
+`eof`) — program 0.2 ze zmienną o takiej nazwie trzeba poprawić. Poza tym
+programy 0.2 działają tak samo.
+
+0.2 wobec 0.1: każdy poprawny program 0.1 działa tak samo. Zmieniło się zachowanie
 programów z błędami:
 
 - Błąd składni jest zgłaszany przed uruchomieniem, więc wcześniejsze linie

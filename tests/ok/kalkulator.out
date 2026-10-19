@@ -1,0 +1,26 @@
+Kalkulator Fih
+Działania: + - * / %   (q zamiast działania kończy)
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik: 42
+
+Podaj pierwszą liczbę: To nie jest liczba, spróbuj jeszcze raz (koniec: Ctrl+D).
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Nie można dzielić przez zero.
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik: 2
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik nie mieści się w zakresie liczb 64-bitowych.
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Nieznane działanie, wybierz + - * / % albo q.
+Działanie (+ - * / %): Podaj drugą liczbę: Wynik: 3
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik nie mieści się w zakresie liczb 64-bitowych.
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik: -9223372036854775808
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik nie mieści się w zakresie liczb 64-bitowych.
+
+Podaj pierwszą liczbę: Działanie (+ - * / %): Podaj drugą liczbę: Wynik: -3
+
+Podaj pierwszą liczbę: To nie jest liczba, spróbuj jeszcze raz (koniec: Ctrl+D).
+Podaj pierwszą liczbę: 
+Do widzenia!

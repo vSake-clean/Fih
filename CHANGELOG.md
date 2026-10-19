@@ -3,6 +3,22 @@
 Format oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 Wersje: `0.MINOR.PATCH` (patrz [CONTRIBUTING.md](CONTRIBUTING.md#wersje)).
 
+## [0.3.0] - 2026-10-19
+
+### Dodane
+- Wczytywanie ze standardowego wejścia: `input()` (liczba z linii),
+  `inputchar()` (kod pierwszego znaku linii), `inputok()` (czy wpis był
+  poprawny), `eof()` (koniec wejścia). Przed odczytem wyjście jest opróżniane,
+  więc pytanie jest widoczne przed wpisem.
+- `write("napis")` i `write(wyrażenie)`: wypisywanie bez nowej linii.
+- Literały znakowe: `'+'`, `'a'`, `'\n'` — wartością jest kod znaku.
+- Przykład `examples/kalkulator.fh`: liczba, działanie, liczba, wynik;
+  powtarza pytanie przy złym wpisie, nie kończy się błędem przy dzieleniu
+  przez zero ani przepełnieniu.
+
+### Zmienione
+- Nowe słowa zarezerwowane: `write`, `input`, `inputchar`, `inputok`, `eof`.
+
 ## [0.2.0] - 2026-10-19
 
 ### Dodane
@@ -49,6 +65,7 @@ Pierwsza wersja.
 - Interpretacja (`fih program.fh`) i kompilacja do statycznego ELF (`fih build`).
 - Duże programy (od 512 KB) na wszystkich rdzeniach.
 
+[0.3.0]: https://github.com/vSake-clean/Fih/releases/tag/v0.3.0
 [0.2.0]: https://github.com/vSake-clean/Fih/releases/tag/v0.2.0
 [0.1.1]: https://github.com/vSake-clean/Fih/releases/tag/v0.1.1
 [0.1.0]: https://github.com/vSake-clean/Fih/commit/f2f6a23

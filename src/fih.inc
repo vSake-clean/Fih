@@ -1,12 +1,20 @@
 ; fih.inc — wspólne stałe i makra interpretera Fih
 
-%define FIH_VERSION "0.2.0"
+%define FIH_VERSION "0.3.0"
 
 ; obszar danych programów 0.2 (rejestr r15 w wygenerowanym kodzie i w rt.asm)
 %define D_OUTLEN    0           ; zajęta część bufora wyjścia
+%define D_INPOS     8           ; wejście: pozycja w buforze,
+%define D_INLEN     16          ;   ilość danych w buforze,
+%define D_INEND     24          ;   1 = read() zwrócił koniec,
+%define D_INOK      32          ;   wynik inputok(),
+%define D_EOF       40          ;   wynik eof(),
+%define D_INSKIP    48          ;   1 = pomijamy resztę za długiej linii
 %define D_OUTBUF    64          ; bufor wyjścia
 %define D_OUTSZ     65536
-%define D_VARS      (D_OUTBUF + D_OUTSZ)    ; zmienne: 16 B każda (wartość, flaga "ma wartość")
+%define D_INBUF     (D_OUTBUF + D_OUTSZ)    ; bufor wejścia
+%define D_INSZ      65536
+%define D_VARS      (D_INBUF + D_INSZ)      ; zmienne: 16 B każda (wartość, flaga "ma wartość")
 %define SYS_MPROTECT 10
 %define PROT_EXEC   4
 

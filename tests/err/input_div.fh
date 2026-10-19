@@ -1,0 +1,4 @@
+a = input()
+b = input()
+write("a/b = ")
+calc(a / b)

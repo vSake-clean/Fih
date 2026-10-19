@@ -4,19 +4,21 @@
 #   kompilacja:     ./fih build X.fh -o tmp && ./tmp
 #   tests/ok/X.fh  + X.out — oczekiwane stdout, kod wyjścia 0
 #   tests/err/X.fh + X.err — oczekiwane stderr, kod wyjścia 1 (build: brak pliku wynikowego)
+#   X.in (opcjonalnie) — standardowe wejście programu
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 pass=0; fail=0
+stdin_of() { [[ -f "${1%.fh}.in" ]] && echo "${1%.fh}.in" || echo /dev/null; }
 ok()  { pass=$((pass+1)); }
 bad() { fail=$((fail+1)); echo "FAIL $*"; }
 
 for f in tests/ok/*.fh; do
     exp="${f%.fh}.out"
-    out=$(./fih "$f" 2>&1; echo "kod=$?")
+    out=$(./fih "$f" 2>&1 < "$(stdin_of "$f")"; echo "kod=$?")
     [[ "$out" == "$(cat "$exp"; echo "kod=0")" ]] && ok || bad "interpretacja $f"
     rm -f "$T/bin"
     if ./fih build "$f" -o "$T/bin" 2>"$T/err"; then
-        out=$("$T/bin" 2>&1; echo "kod=$?")
+        out=$("$T/bin" 2>&1 < "$(stdin_of "$f")"; echo "kod=$?")
         [[ "$out" == "$(cat "$exp"; echo "kod=0")" ]] && ok || bad "kompilacja $f"
     else
         bad "kompilacja $f: $(cat "$T/err")"
@@ -31,11 +33,11 @@ runtime_re=': (dzielenie przez zero|przepełnienie: wynik poza zakresem liczb 64
 for f in tests/err/*.fh; do
     exp=$(cat "${f%.fh}.err")
     expout=""; [[ -f "${f%.fh}.out" ]] && expout=$(cat "${f%.fh}.out")
-    out=$(./fih "$f" 2>"$T/err"); code=$?
+    out=$(./fih "$f" 2>"$T/err" < "$(stdin_of "$f")"); code=$?
     [[ $code == 1 && "$(cat "$T/err")" == "$exp" && "$out" == "$expout" ]] && ok || bad "interpretacja $f (kod $code): $(cat "$T/err")"
     rm -f "$T/bin"
     if [[ "$exp" =~ $runtime_re ]]; then
-        ./fih build "$f" -o "$T/bin" 2>"$T/err" && out=$("$T/bin" 2>"$T/err"); code=$?
+        ./fih build "$f" -o "$T/bin" 2>"$T/err" && out=$("$T/bin" 2>"$T/err" < "$(stdin_of "$f")"); code=$?
         [[ $code == 1 && "$(cat "$T/err")" == "$exp" && "$out" == "$expout" ]] && ok || bad "kompilacja $f (kod $code): $(cat "$T/err")"
     else
         out=$(./fih build "$f" -o "$T/bin" 2>&1); code=$?

@@ -74,11 +74,20 @@ rt_write:
     mov edi, STDOUT         ; za duże na bufor — od razu na wyjście
     jmp rt_write_or_die
 
+; rt_int(rax=liczba ze znakiem) — wypisuje liczbę (bez '\n')
+rt_int:
+    sub rsp, 40
+    lea rsi, [rsp + 33]
+    mov r9d, 33
+    jmp rt_int_digits
+
 ; rt_int_nl(rax=liczba ze znakiem) — wypisuje liczbę i '\n'
 rt_int_nl:
     sub rsp, 40
     lea rsi, [rsp + 32]
     mov byte [rsi], 10
+    mov r9d, 33
+rt_int_digits:                      ; r9 = koniec zapisu względem rsp
     mov rcx, rax
     test rax, rax
     jns .digit
@@ -97,10 +106,200 @@ rt_int_nl:
     dec rsi
     mov byte [rsi], '-'
 .write:
-    lea rdx, [rsp + 33]
+    lea rdx, [rsp + r9]
     sub rdx, rsi
     call rt_write
     add rsp, 40
+    ret
+
+; rt_readline -> rax = 0: linia (rsi = początek, rdx = długość bez '\n',
+; albo rdx = -1, gdy linia ma 64 KB lub więcej); rax = 1: koniec wejścia.
+; Najpierw opróżnia wyjście, żeby pytanie było widoczne przed wpisem.
+rt_readline:
+    call rt_flush
+.scan:
+    mov rsi, [r15 + D_INPOS]
+    mov rcx, [r15 + D_INLEN]
+    lea rdi, [r15 + D_INBUF]
+    mov rdx, rsi
+.find:
+    cmp rdx, rcx
+    jae .none
+    cmp byte [rdi + rdx], 10
+    je .found
+    inc rdx
+    jmp .find
+.found:
+    lea rax, [rdx + 1]
+    mov [r15 + D_INPOS], rax
+    cmp qword [r15 + D_INSKIP], 0
+    jne .skipped
+    sub rdx, rsi                    ; długość
+    add rsi, rdi
+    xor eax, eax
+    ret
+.skipped:                           ; koniec za długiej linii
+    mov qword [r15 + D_INSKIP], 0
+    mov rdx, -1
+    xor eax, eax
+    ret
+.none:
+    cmp qword [r15 + D_INEND], 0
+    je .more
+    ; koniec danych: ostatnia linia bez '\n' albo koniec wejścia
+    mov [r15 + D_INPOS], rcx
+    cmp qword [r15 + D_INSKIP], 0
+    jne .skipped
+    cmp rsi, rcx
+    je .eof
+    mov rdx, rcx
+    sub rdx, rsi
+    add rsi, rdi
+    xor eax, eax
+    ret
+.eof:
+    mov eax, 1
+    ret
+.more:
+    ; przesuwamy niezużyte dane na początek bufora
+    sub rcx, rsi
+    push rcx
+    lea rdi, [r15 + D_INBUF]
+    lea rsi, [rdi + rsi]
+    rep movsb
+    pop rcx
+    mov qword [r15 + D_INPOS], 0
+    cmp rcx, D_INSZ
+    jb .read
+    mov qword [r15 + D_INSKIP], 1   ; 64 KB bez '\n': za długa linia, pomijamy
+    xor ecx, ecx
+.read:
+    mov [r15 + D_INLEN], rcx
+    mov eax, SYS_READ
+    xor edi, edi
+    lea rsi, [r15 + D_INBUF + rcx]
+    mov edx, D_INSZ
+    sub rdx, rcx
+    syscall
+    cmp rax, -EINTR
+    je .read_again
+    test rax, rax
+    jg .got
+    mov qword [r15 + D_INEND], 1    ; koniec albo błąd odczytu
+    jmp .scan
+.read_again:
+    mov rcx, [r15 + D_INLEN]
+    jmp .read
+.got:
+    add [r15 + D_INLEN], rax
+    jmp .scan
+
+; rt_input -> rax = liczba z linii wejścia (0, gdy to nie liczba);
+; inputok() = 1 tylko dla poprawnej liczby, eof() = 1 po końcu wejścia
+rt_input:
+    call rt_readline
+    test eax, eax
+    jnz rt_in_eof
+    mov qword [r15 + D_INOK], 0
+    cmp rdx, -1
+    je .bad
+    call rt_trim
+    test rdx, rdx
+    jz .bad
+    ; [+-]cyfry; liczymy ujemnie, żeby zmieścić -9223372036854775808
+    xor r8d, r8d                    ; 1 = minus
+    mov al, [rsi]
+    cmp al, '+'
+    je .sign
+    cmp al, '-'
+    jne .digits
+    mov r8d, 1
+.sign:
+    inc rsi
+    dec rdx
+    jz .bad
+.digits:
+    xor eax, eax
+.digit:
+    movzx ecx, byte [rsi]
+    sub ecx, '0'
+    cmp ecx, 9
+    ja .bad
+    imul rax, rax, 10
+    jo .bad
+    sub rax, rcx
+    jo .bad
+    inc rsi
+    dec rdx
+    jnz .digit
+    test r8d, r8d
+    jnz .ok
+    neg rax
+    jo .bad
+.ok:
+    mov qword [r15 + D_INOK], 1
+    ret
+.bad:
+    xor eax, eax
+    ret
+
+rt_in_eof:
+    mov qword [r15 + D_EOF], 1
+    mov qword [r15 + D_INOK], 0
+    xor eax, eax
+    ret
+
+; rt_inputchar -> rax = kod pierwszego znaku linii (bez spacji); 0 dla
+; pustej linii, -1 po końcu wejścia
+rt_inputchar:
+    call rt_readline
+    test eax, eax
+    jz .line
+    call rt_in_eof
+    mov rax, -1
+    ret
+.line:
+    mov qword [r15 + D_INOK], 0
+    cmp rdx, -1
+    je .empty
+    call rt_trim
+    test rdx, rdx
+    jz .empty
+    movzx eax, byte [rsi]
+    mov qword [r15 + D_INOK], 1
+    ret
+.empty:
+    xor eax, eax
+    ret
+
+; rt_trim(rsi, rdx) — obcina spacje, tabulatory i '\r' z obu stron
+rt_trim:
+.left:
+    test rdx, rdx
+    jz .done
+    mov al, [rsi]
+    cmp al, ' '
+    je .l
+    cmp al, 9
+    je .l
+    cmp al, 13
+    jne .right
+.l:
+    inc rsi
+    dec rdx
+    jmp .left
+.right:
+    mov al, [rsi + rdx - 1]
+    cmp al, ' '
+    je .r
+    cmp al, 9
+    je .r
+    cmp al, 13
+    jne .done
+.r:
+    dec rdx
+    jnz .right
+.done:
     ret
 
 ; rt_flush() — opróżnia bufor wyjścia
@@ -262,3 +461,6 @@ rt_table:
     dd rt_exit - rt_begin       ; RT_EXIT
     dd rt_die - rt_begin        ; RT_DIE
     dd rt_die_var - rt_begin    ; RT_DIE_VAR
+    dd rt_int - rt_begin        ; RT_INT
+    dd rt_input - rt_begin      ; RT_INPUT
+    dd rt_inputchar - rt_begin  ; RT_INPUTCHAR

@@ -12,6 +12,11 @@
 - Kompilator do kodu maszynowego: JIT (`fih program.fh`) i plik ELF (`fih build`).
 - Cały plik sprawdzany przed uruchomieniem.
 
+## 0.3: wczytywanie danych (gotowe)
+
+- `input()`, `inputchar()`, `inputok()`, `eof()`, `write`, literały znakowe `'+'`.
+- Przykład: kalkulator (`examples/kalkulator.fh`).
+
 Szczegóły: [SPEC.md](SPEC.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Później (pomysły, bez kolejności i obietnic)
@@ -19,7 +24,7 @@ Szczegóły: [SPEC.md](SPEC.md), [CHANGELOG.md](CHANGELOG.md).
 - napisy w zmiennych, łączenie napisów, `print` zmiennej,
 - funkcje,
 - tablice,
-- wczytywanie danych (stdin, argumenty),
+- argumenty wiersza poleceń, wczytywanie napisów,
 - zmienne w rejestrach procesora (szybsze pętle),
 - podświetlanie składni (VS Code, Vim),
 - inne platformy (ARM64).

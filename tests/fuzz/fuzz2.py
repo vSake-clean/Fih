@@ -44,8 +44,10 @@ class Gen:
     def atom(self):
         r = self.r
         k = r.random()
-        if k < 0.45: return gen_number(r)
-        if k < 0.85: return self.var()
+        if k < 0.4: return gen_number(r)
+        if k < 0.8: return self.var()
+        if k < 0.85: return r.choice(["input()", "inputchar()", "inputok()", "eof()", "input( )",
+                                      "'+'", "'q'", "'#'", "'\\n'", "'\\''", "' '"])
         return r.choice(["-", "+", "--", "- "]) + self.atom()
 
     def expr(self, d=0, level=0):
@@ -89,6 +91,9 @@ class Gen:
         elif k < 0.45:
             e = self.expr()
             lines.append(f'{ind}calc("{e}")' if r.random() < 0.3 else f"{ind}calc({e})")
+        elif k < 0.49:
+            lines.append(f'{ind}write({self.expr()})' if r.random() < 0.5 else
+                         f'{ind}write("{r.choice(["a", "", "Wynik: ", "x\\n"])}")')
         elif k < 0.52:
             lines.append(f'{ind}print("{r.choice(["ryba", "", "a b", "zażółć 🐟", "x\\ty", "\\\"q\\\"", "#"])}")')
         elif k < 0.7 and depth < 4:
@@ -124,7 +129,8 @@ class Gen:
 def mutate(r, s):
     i = r.randrange(len(s) + 1)
     junk = r.choice(list("(){}+-*/%=<>!\"\\#x 0\t\r\n_aZ\x00\xff") +
-                    ["print", "calc", "if", "else", "while", "break", "and", "or", "not", "==", "+=", "ł"])
+                    ["print", "calc", "if", "else", "while", "break", "and", "or", "not", "==", "+=", "ł",
+                     "write", "input", "()", "'", "'+'"])
     k = r.random()
     if k < 0.4: return s[:i] + junk + s[i:]
     if k < 0.7: return s[:i] + s[i + 1:]
@@ -139,16 +145,30 @@ def gen_program(r):
     return src.encode("utf-8", "surrogatepass")
 
 
-def check(src, tmp):
+def gen_stdin(r):
+    lines = []
+    for _ in range(r.randint(0, 12)):
+        k = r.random()
+        if k < 0.4: l = str(r.randint(-1000, 1000))
+        elif k < 0.55: l = r.choice(["+", "-", "*", "/", "%", "q", "x", "#"])
+        elif k < 0.65: l = r.choice(["", " ", "\t7\r", " -0 ", "+5", "--5", "1 2", "12a", "-"])
+        elif k < 0.75: l = r.choice(["9223372036854775807", "-9223372036854775808", "9223372036854775808", "ł"])
+        elif k < 0.77: l = "7" * r.choice([65535, 65536, 70000])
+        else: l = str(r.randint(0, 20))
+        lines.append(l)
+    return ("\n".join(lines) + r.choice(["\n", "", "\r\n"])).encode()
+
+
+def check(src, tmp, stdin=b""):
     """-> lista problemów (pusta = zgodność) albo None (program pominięty)"""
     try:
-        exp_out, exp_err, exp_code, kind = oracle.run(src, steps=200_000)
+        exp_out, exp_err, exp_code, kind = oracle.run(src, steps=200_000, stdin=stdin)
     except oracle.Steps:
         return None
     prog, binp = os.path.join(tmp, "p.fh"), os.path.join(tmp, "p")
     open(prog, "wb").write(src)
     problems = []
-    res = subprocess.run([FIH, prog], capture_output=True, timeout=20)
+    res = subprocess.run([FIH, prog], capture_output=True, timeout=20, input=stdin)
     if res.returncode < 0:
         problems.append(f"interpretacja: sygnał {-res.returncode}")
     elif (res.stdout, res.stderr, res.returncode) != (exp_out, exp_err, exp_code):
@@ -164,7 +184,7 @@ def check(src, tmp):
     elif res.returncode or res.stderr or res.stdout:
         problems.append(f"kompilacja: kod {res.returncode}, stderr {res.stderr!r}")
     else:
-        run = subprocess.run([binp], capture_output=True, timeout=20)
+        run = subprocess.run([binp], capture_output=True, timeout=20, input=stdin)
         if (run.stdout, run.stderr, run.returncode) != (exp_out, exp_err, exp_code):
             problems.append(f"skompilowany program: kod {run.returncode} (oczekiwano {exp_code}), "
                             f"stderr {run.stderr!r}, stdout zgodny: {run.stdout == exp_out}")
@@ -180,15 +200,17 @@ def main():
     stats = {None: 0, "static": 0, "runtime": 0, "skip": 0}
     for i in range(count):
         src = gen_program(r)
-        problems = check(src, tmp)
+        stdin = gen_stdin(r)
+        problems = check(src, tmp, stdin)
         if problems is None:
             stats["skip"] += 1
             continue
-        stats[oracle.run(src, steps=200_000)[3]] += 1
+        stats[oracle.run(src, steps=200_000, stdin=stdin)[3]] += 1
         if problems:
             failures += 1
             path = os.path.join(os.path.dirname(__file__), f"fail2_{seed}_{i}.fh")
             open(path, "wb").write(src)
+            open(path[:-3] + ".in", "wb").write(stdin)
             print(f"BŁĄD #{i} (zapisano {path}):\n  " + "\n  ".join(problems))
             if failures >= 10: break
     print(f"ziarno {seed}: {count} programów (poprawne {stats[None]}, błąd składni {stats['static']}, "

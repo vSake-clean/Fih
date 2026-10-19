@@ -40,6 +40,9 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
 %define RT_EXIT    3
 %define RT_DIE     4
 %define RT_DIE_VAR 5
+%define RT_INT     6
+%define RT_INPUT   7
+%define RT_INPUTCHAR 8
 
 %define HDR_SIZE 16
 
@@ -72,6 +75,11 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
 %define KW_AND      8
 %define KW_OR       9
 %define KW_NOT      10
+%define KW_WRITE    11
+%define KW_INPUT    12      ; funkcje wbudowane: KW_INPUT ... KW_EOF
+%define KW_INPUTCHAR 13
+%define KW_INPUTOK  14
+%define KW_EOF      15
 
 ; bloki
 %define B_IF    1
@@ -117,6 +125,17 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
     mov qword [rax], %1
 %endmacro
 
+; AT znak -> ZF=1, gdy w r12 (przed r13) stoi ten znak
+%macro AT 1
+    cmp r12, r13
+    jae %%no
+    cmp byte [r12], %1
+    jmp %%done
+%%no:
+    test r12, r12           ; ZF = 0
+%%done:
+%endmacro
+
 ; CERR etykieta, "komunikat" — błąd kompilacji z numerem linii
 %macro CERR 2
 %1:
@@ -157,6 +176,11 @@ kw_tab:
     db 3, "and"
     db 2, "or"
     db 3, "not"
+    db 5, "write"
+    db 5, "input"
+    db 9, "inputchar"
+    db 7, "inputok"
+    db 3, "eof"
     db 0
 kw_not: db "not"
 kw_and: db "and"
@@ -177,6 +201,7 @@ line_eol:  resq 1
 max_depth: resq 1           ; limit zagnieżdżenia nawiasów (jak w expr.asm)
 hard_floor: resq 1          ; twarda granica stosu parsera
 paren_depth: resq 1
+str_nl:    resd 1           ; 1 = print (napis z '\n'), 0 = write
 stub_ovf:  resd 1           ; wywołania błędów dla bieżącej linii (-1 = brak)
 stub_div:  resd 1
 last_set_pos: resd 1        ; ostatnie "setcc al; movzx eax, al": początek,
@@ -1430,6 +1455,8 @@ primary:
     movzx eax, byte [r12]
     cmp al, '('
     je .paren
+    cmp al, "'"
+    je .char
     lea ecx, [rax - '0']
     cmp ecx, 9
     jbe .number
@@ -1482,6 +1509,8 @@ primary:
     mov rsi, r12
     sub rsi, rbx
     call kw_id
+    cmp eax, KW_INPUT
+    jae .func
     cmp eax, KW_AND
     jae .kw_bad
     mov rdi, rbx
@@ -1503,6 +1532,79 @@ primary:
 .kw_bad:
     mov r12, rbx
     jmp err_unexpected
+.func:
+    ; funkcja wbudowana bez argumentów: nazwa ( )
+    mov ebx, eax
+    call ws
+    AT '('
+    jne err_func
+    inc r12
+    call ws
+    AT ')'
+    jne err_func
+    inc r12
+    cmp ebx, KW_INPUTOK
+    jae .flag
+    mov edi, RT_INPUT
+    cmp ebx, KW_INPUT
+    je .call
+    mov edi, RT_INPUTCHAR
+.call:
+    call emit_call_rt
+    jmp .func_done
+.flag:
+    EMIT 0x49, 0x8b, 0x87           ; mov rax, [r15 + D_INOK / D_EOF]
+    mov ecx, D_INOK
+    cmp ebx, KW_INPUTOK
+    je .flag_off
+    mov ecx, D_EOF
+.flag_off:
+    EMITD ecx
+.func_done:
+    mov eax, K_REG
+    pop rbx
+    ret
+.char:
+    ; literał znakowy: 'c' albo '\n' '\t' '\\' '\'' — wartość to kod znaku
+    lea rax, [r12 + 2]
+    cmp rax, r13
+    jae err_char_lit
+    movzx edx, byte [r12 + 1]
+    cmp dl, '\'
+    je .char_esc
+    cmp dl, "'"
+    je err_char_lit
+    cmp dl, ' '
+    jb err_char_lit
+    cmp dl, '~'
+    ja err_char_lit
+    cmp byte [r12 + 2], "'"
+    jne err_char_lit
+    add r12, 3
+    mov eax, K_CONST
+    ret
+.char_esc:
+    lea rax, [r12 + 3]
+    cmp rax, r13
+    jae err_char_lit
+    cmp byte [r12 + 3], "'"
+    jne err_char_lit
+    movzx eax, byte [r12 + 2]
+    mov edx, 10
+    cmp al, 'n'
+    je .char_ok
+    mov edx, 9
+    cmp al, 't'
+    je .char_ok
+    mov edx, eax
+    cmp al, '\'
+    je .char_ok
+    cmp al, "'"
+    jne err_char_lit
+.char_ok:
+    add r12, 4
+    mov eax, K_CONST
+    ret
 .unknown:
     mov rdx, rbx
     mov rcx, r12
@@ -1668,16 +1770,6 @@ end_check:
 .ok:
     ret
 
-; AT znak -> ZF=1, gdy w r12 (przed r13) stoi ten znak
-%macro AT 1
-    cmp r12, r13
-    jae %%no
-    cmp byte [r12], %1
-    jmp %%done
-%%no:
-    test r12, r12           ; ZF = 0
-%%done:
-%endmacro
 
 ; scan_string — kursor za otwierającym '"'; -> rbx = początek treści,
 ; rbp = koniec (zamykający '"'), kursor za '"'
@@ -1706,13 +1798,30 @@ scan_string:
 bare_expr:
     push r13
     mov rdi, r12
-    mov rcx, r13
-    sub rcx, r12
-    jz .whole
-    mov al, '#'
-    repne scasb
-    jne .whole
-    lea r13, [rdi - 1]
+.scan:                              ; '#' w literale znakowym ('#') to nie komentarz
+    cmp rdi, r13
+    jae .whole
+    mov al, [rdi]
+    cmp al, '#'
+    je .cut
+    inc rdi
+    cmp al, "'"
+    jne .scan
+    cmp rdi, r13
+    jae .whole
+    cmp byte [rdi], '\'
+    jne .one
+    inc rdi
+.one:
+    inc rdi
+    cmp rdi, r13
+    jae .whole
+    cmp byte [rdi], "'"
+    jne .scan
+    inc rdi
+    jmp .scan
+.cut:
+    mov r13, rdi
 .whole:
     xor edi, edi
     call expr
@@ -1889,6 +1998,8 @@ statement:
     je .break
     cmp eax, KW_CONTINUE
     je .continue
+    cmp eax, KW_WRITE
+    je .write
     test eax, eax
     jnz err_char                    ; and / or / not na początku instrukcji
     jmp .assign
@@ -1899,11 +2010,32 @@ statement:
     pop rbx
     ret
 
-; --- print("napis") ---
+; --- print("napis") / write("napis") / write(wyrażenie) ---
+.write:
+    call open_paren
+    mov dword [str_nl], 0
+    AT '"'
+    je .str
+    call bare_expr                  ; write(wyrażenie): liczba bez '\n'
+    mov r14d, eax
+    mov r15, rdx
+    call blank
+    AT ')'
+    jne err_rparen_expr
+    inc r12
+    call end_check
+    mov edi, r14d
+    mov rsi, r15
+    call materialize
+    mov edi, RT_INT
+    call emit_call_rt
+    jmp .ret
 .print:
     call open_paren
+    mov dword [str_nl], 1
     AT '"'
     jne err_string
+.str:
     inc r12
     call scan_string
     call close_paren_str
@@ -1941,8 +2073,11 @@ statement:
     inc rdi
     jmp .p_loop
 .p_end:
+    cmp dword [str_nl], 0
+    je .p_nonl
     mov byte [rdi], 10
     inc rdi
+.p_nonl:
     sub rdi, [const_buf]
     mov [const_buf + 8], rdi        ; długość po rozwinięciu
     mov r15, rdi
@@ -2582,3 +2717,5 @@ CERR err_incomplete,    "niekompletne wyrażenie"
 CERR err_rparen_e,      "brak ')' w wyrażeniu"
 CERR err_big,           "liczba za duża (max 9223372036854775807)"
 CERR err_too_deep,      "wyrażenie zbyt głęboko zagnieżdżone"
+CERR err_func,          "oczekiwano '()' po nazwie funkcji"
+CERR err_char_lit,      "zły zapis znaku (przykład: '+')"

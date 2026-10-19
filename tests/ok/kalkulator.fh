@@ -1,0 +1,95 @@
+# Kalkulator: pierwsza liczba, działanie, druga liczba, wynik.
+# Działania: + - * / %. Koniec: q zamiast działania albo Ctrl+D.
+# Uruchomienie: fih examples/kalkulator.fh
+
+MAX = 9223372036854775807
+MIN = -MAX - 1
+
+print("Kalkulator Fih")
+print("Działania: + - * / %   (q zamiast działania kończy)")
+
+while 1 {
+    print("")
+    write("Podaj pierwszą liczbę: ")
+    a = input()
+    while not inputok() and not eof() {
+        print("To nie jest liczba, spróbuj jeszcze raz (koniec: Ctrl+D).")
+        write("Podaj pierwszą liczbę: ")
+        a = input()
+    }
+    if eof() {
+        break
+    }
+
+    write("Działanie (+ - * / %): ")
+    op = inputchar()
+    while not eof() and not (op == '+' or op == '-' or op == '*' or op == '/' or op == '%' or op == 'q') {
+        print("Nieznane działanie, wybierz + - * / % albo q.")
+        write("Działanie (+ - * / %): ")
+        op = inputchar()
+    }
+    if eof() or op == 'q' {
+        break
+    }
+
+    write("Podaj drugą liczbę: ")
+    b = input()
+    while not inputok() and not eof() {
+        print("To nie jest liczba, spróbuj jeszcze raz (koniec: Ctrl+D).")
+        write("Podaj drugą liczbę: ")
+        b = input()
+    }
+    if eof() {
+        break
+    }
+
+    # sprawdzenie przed liczeniem: zero w dzieleniu i wynik poza zakresem
+    # liczb 64-bitowych kończyłyby program błędem
+    zakres = 1
+    zero = 0
+    if op == '+' {
+        if b > 0 and a > MAX - b or b < 0 and a < MIN - b {
+            zakres = 0
+        } else {
+            w = a + b
+        }
+    } else if op == '-' {
+        if b < 0 and a > MAX + b or b > 0 and a < MIN + b {
+            zakres = 0
+        } else {
+            w = a - b
+        }
+    } else if op == '*' {
+        if a > 0 and b > 0 and a > MAX / b or a > 0 and b < 0 and b < MIN / a or a < 0 and b > 0 and a < MIN / b or a < 0 and b < 0 and b < MAX / a {
+            zakres = 0
+        } else {
+            w = a * b
+        }
+    } else if op == '/' {
+        if b == 0 {
+            zero = 1
+        } else if a == MIN and b == -1 {
+            zakres = 0
+        } else {
+            w = a / b
+        }
+    } else {
+        if b == 0 {
+            zero = 1
+        } else {
+            w = a % b
+        }
+    }
+
+    if zero {
+        print("Nie można dzielić przez zero.")
+    } else if not zakres {
+        print("Wynik nie mieści się w zakresie liczb 64-bitowych.")
+    } else {
+        write("Wynik: ")
+        calc(w)
+    }
+}
+
+print("")
+print("Do widzenia!")

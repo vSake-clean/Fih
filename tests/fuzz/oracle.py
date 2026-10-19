@@ -45,7 +45,11 @@ MSG = {
     "e_big": "liczba za duża (max 9223372036854775807)",
     "e_ovf": "przepełnienie: wynik poza zakresem liczb 64-bitowych",
     "e_deep": "wyrażenie zbyt głęboko zagnieżdżone",
+    "func": "oczekiwano '()' po nazwie funkcji",
+    "char_lit": "zły zapis znaku (przykład: '+')",
 }
+FUNCS = (b"input", b"inputchar", b"inputok", b"eof")
+LINE_MAX = 65536            # linia wejścia od tej długości jest za długa
 RUNTIME = {"e_div0", "e_ovf", "no_value"}
 
 
@@ -159,9 +163,31 @@ class Parser:
                 if v > I64_MAX: self.err("e_big")
                 self.p += 1
             return ("num", v)
+        if c == 39:                                   # 'c'
+            if self.p + 2 >= self.bound: self.err("char_lit")
+            ch = self.src[self.p + 1]
+            if ch == 92:
+                if self.p + 3 >= self.bound or self.src[self.p + 3] != 39: self.err("char_lit")
+                e = self.src[self.p + 2]
+                v = {110: 10, 116: 9, 92: 92, 39: 39}.get(e)
+                if v is None: self.err("char_lit")
+                self.p += 4
+                return ("num", v)
+            if ch == 39 or not 32 <= ch <= 126 or self.src[self.p + 2] != 39: self.err("char_lit")
+            self.p += 3
+            return ("num", ch)
         if ident_start(c):
             name = self.word()
-            if name in (b"and", b"or", b"not"): self.err("e_unexpected")
+            if name in FUNCS:
+                self.p += len(name)
+                self.ws()
+                if self.p >= self.bound or self.src[self.p] != 40: self.err("func")
+                self.p += 1
+                self.ws()
+                if self.p >= self.bound or self.src[self.p] != 41: self.err("func")
+                self.p += 1
+                return ("call", name)
+            if name in (b"and", b"or", b"not", b"write"): self.err("e_unexpected")
             if name not in self.assigned: self.err("unknown_var", name)
             self.p += len(name)
             return ("var", name)
@@ -184,10 +210,23 @@ class Parser:
         self.blank()
         if self.q < self.eol and self.src[self.q] != 35: self.err("trailing")
 
+    def bare_bound(self):
+        """koniec wyrażenia bez cudzysłowu: '#' (poza literałem '#') albo koniec linii"""
+        i = self.q
+        while i < self.eol:
+            c = self.src[i]
+            if c == 35: return i
+            i += 1
+            if c == 39:
+                if i >= self.eol: return self.eol
+                i += 2 if self.src[i] == 92 else 1
+                if i >= self.eol: return self.eol
+                if self.src[i] == 39: i += 1
+        return self.eol
+
     def bare_expr(self):
-        """wyrażenie bez cudzysłowu: do pierwszego '#' albo końca linii"""
-        b = self.src.find(b"#", self.q, self.eol)
-        e = self.parse_expr(self.q, self.eol if b < 0 else b)
+        """wyrażenie bez cudzysłowu: do '#' albo końca linii"""
+        e = self.parse_expr(self.q, self.bare_bound())
         self.q = self.p
         return e
 
@@ -273,11 +312,20 @@ class Parser:
             return
         if not ident_start(c): self.err("char")
         name = self.ident()
-        if name in (b"print", b"calc"):
+        if name in (b"print", b"calc", b"write"):
             self.blank()
             if not self.at(40): self.err("lparen")
             self.q += 1
             self.blank()
+            if name == b"write" and self.at(34):
+                self.q += 1
+                s0, s1 = self.string()
+                self.blank()
+                if not self.at(41): self.err("rparen")
+                self.q += 1
+                self.end_check()
+                out.append(("print", line, self.unescape(self.src[s0:s1])[:-1]))
+                return
             if name == b"print" or self.at(34):
                 if not self.at(34): self.err("string")
                 self.q += 1
@@ -298,7 +346,7 @@ class Parser:
             if not self.at(41): self.err("rparen_expr")
             self.q += 1
             self.end_check()
-            out.append(("calc", line, e))
+            out.append(("calc" if name == b"calc" else "write", line, e))
             return
         if name in (b"if", b"while"):
             cond = self.bare_expr()
@@ -318,7 +366,7 @@ class Parser:
             if not any(b[0] == "while" for b in self.stack): self.err(name.decode())
             out.append((name.decode(), line))
             return
-        if name in (b"and", b"or", b"not"): self.err("char")
+        if name in (b"and", b"or", b"not") or name in FUNCS: self.err("char")
         self.blank()
         if self.at(40): self.err("unknown")
         if self.at(61) and self.src[self.q + 1:self.q + 2] != b"=":
@@ -379,9 +427,59 @@ CMP = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b, "<": lambda a, b: a
        "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, ">=": lambda a, b: a >= b}
 
 
+class Input:
+    """stan standardowego wejścia programu"""
+    def __init__(self, data):
+        self.data, self.pos, self.ok, self.eof = data, 0, 0, 0
+
+    def line(self):
+        """-> linia bez '\\n' (obcięta), b"..." za długa = None, koniec = False"""
+        if self.pos >= len(self.data): return False
+        i = self.data.find(b"\n", self.pos)
+        if i < 0: i = len(self.data)
+        raw = self.data[self.pos:i]
+        self.pos = i + 1
+        if len(raw) >= LINE_MAX: return None
+        return raw.strip(b" \t\r")
+
+    def input(self):
+        l = self.line()
+        if l is False:
+            self.eof, self.ok = 1, 0
+            return 0
+        self.ok = 0
+        if not l: return 0
+        body = l[1:] if l[:1] in (b"+", b"-") else l
+        if not body or not body.isdigit() or not body.isascii(): return 0
+        if len(body.lstrip(b"0")) > 19: return 0       # na pewno poza zakresem
+        v = int(l[:1] + body.lstrip(b"0") if l[:1] in (b"+", b"-") else body.lstrip(b"0") or b"0") if body.lstrip(b"0") else 0
+        if not I64_MIN <= v <= I64_MAX: return 0
+        self.ok = 1
+        return v
+
+    def inputchar(self):
+        l = self.line()
+        if l is False:
+            self.eof, self.ok = 1, 0
+            return -1
+        self.ok = 0
+        if not l: return 0
+        self.ok = 1
+        return l[0]
+
+
+IN = [None]
+
+
 def ev(e, env, line):
     k = e[0]
     if k == "num": return e[1]
+    if k == "call":
+        inp = IN[0]
+        if e[1] == b"input": return inp.input()
+        if e[1] == b"inputchar": return inp.inputchar()
+        if e[1] == b"inputok": return inp.ok
+        return inp.eof
     if k == "var":
         if e[1] not in env: raise FihError("no_value", line, e[1])
         return env[e[1]]
@@ -409,6 +507,8 @@ def execute(stmts, env, out, steps):
             out += s[2]
         elif k == "calc":
             out += str(ev(s[2], env, s[1])).encode() + b"\n"
+        elif k == "write":
+            out += str(ev(s[2], env, s[1])).encode()
         elif k == "set":
             _, line, name, op, e = s
             if op == "=":
@@ -447,7 +547,7 @@ def execute(stmts, env, out, steps):
             raise Continue
 
 
-def run(src, max_depth=None, steps=1_000_000):
+def run(src, max_depth=None, steps=1_000_000, stdin=b""):
     """-> (stdout, stderr, kod, rodzaj); wyjątek Steps, gdy program liczy za długo"""
     p = Parser(src, max_depth or max_paren_depth())
     try:
@@ -455,6 +555,7 @@ def run(src, max_depth=None, steps=1_000_000):
     except FihError as e:
         return b"", e.text(), 1, "static"
     out = bytearray()
+    IN[0] = Input(stdin)
     try:
         execute(prog, {}, out, [steps])
     except FihError as e:

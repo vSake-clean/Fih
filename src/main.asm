@@ -43,7 +43,9 @@ msg_help_usage_len equ $ - msg_help
                 db '  x = wyrażenie          przypisanie; także += -= *= /= %=', 10
                 db '  if w { ... } else if w { ... } else { ... }', 10
                 db '  while w { ... }        pętla; break, continue', 10
-                db "Wyrażenia: + - * / % ( ), == != < <= > >= (także 0 < x < 10), and or not.", 10, 10
+                db '  write("napis")         jak print, bez nowej linii; write(wyrażenie) wypisuje liczbę', 10
+                db "Wyrażenia: + - * / % ( ), == != < <= > >= (także 0 < x < 10), and or not.", 10
+                db "Wejście: input() liczba z linii, inputok(), inputchar() kod znaku ('+'), eof().", 10, 10
                 db "Kody wyjścia: 0 sukces, 1 błąd w programie, 2 złe argumenty.", 10
                 db "Specyfikacja: https://github.com/vSake-clean/Fih/blob/main/SPEC.md", 10
 msg_help_len    equ $ - msg_help
