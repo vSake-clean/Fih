@@ -3,7 +3,7 @@ NASMFLAGS := -f elf64 -g -F dwarf -w+all -w-reloc-rel-dword -I src/
 LD        := ld
 
 # gorący kod szybkiego interpretera na początku pliku (ułożenie w pamięci ma znaczenie)
-OBJ := $(patsubst %,build/%.o,expr interp io par main elf comp rt)
+OBJ := $(patsubst %,build/%.o,expr interp io par main elf comp imp rt)
 
 fih: $(OBJ)
 	$(LD) -o $@ $(OBJ)
@@ -16,6 +16,7 @@ build:
 
 test: fih
 	./tests/run.sh
+	./tests/sandbox.sh
 
 fuzz: fih
 	python3 tests/fuzz/fuzz2.py 5000

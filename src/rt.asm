@@ -436,6 +436,294 @@ rt_err_end:
     call rt_write_or_die
     jmp rt_exit1
 
+; rt_sandbox — blokady jądra według importów (opis uprawnień: drugie pole
+; nagłówka obrazu, format w imp.asm). Wołane na początku programu.
+;   Landlock: pliki tylko według reguł import files, bez net — bez TCP,
+;     bez sygnałów i gniazd abstrakcyjnych poza programem (ABI 6).
+;     Bez commands nie ma prawa uruchamiania plików.
+;   Limity zasobów: bez commands — bez nowych procesów, bez żadnego importu
+;     — bez nowych deskryptorów (więc też bez gniazd i io_uring).
+;   seccomp (kosztuje ~0,1 ms, więc tylko gdy potrzebny: files/commands bez
+;     net albo jądro bez Landlock): bez net — bez gniazd, bez commands — bez
+;     uruchamiania programów i nowych procesów; zawsze bez io_uring i ptrace.
+%define SYS_LL_CREATE   444
+%define SYS_LL_ADD      445
+%define SYS_LL_RESTRICT 446
+%define SYS_SECCOMP     317
+%define SYS_READLINKAT  267
+%define PR_SET_NO_NEW_PRIVS 38
+%define SYS_SETRLIMIT   160
+%define RLIMIT_NPROC    6
+%define RLIMIT_NOFILE   7
+%define EINVAL          22
+%define LL_FILE_RIGHTS  0xc007      ; prawa dozwolone dla reguły na pliku (nie folderze)
+; stos: [0] atrybuty zbioru reguł (24 B), [32] reguła ścieżki (12 B),
+; [48] folder programu, [56] struct sock_fprog, [72] filtr seccomp
+%define SB_FRAME 208
+rt_sandbox:
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    sub rsp, SB_FRAME
+    lea rbx, [rt_begin]
+    add rbx, [rt_end + 8]
+    mov r12d, [rbx]                 ; flagi POL_*
+    mov eax, SYS_LL_CREATE          ; wersja Landlock
+    xor edi, edi
+    xor esi, esi
+    mov edx, 1                      ; LANDLOCK_CREATE_RULESET_VERSION
+    syscall
+    test rax, rax
+    jle .ll_fail
+    mov r13, rax
+    mov r14d, 0x1fff                ; prawa obsługiwane przez tę wersję
+    cmp r13, 2
+    jb .attr0
+    or r14d, 0x2000                 ; REFER
+    cmp r13, 3
+    jb .attr0
+    or r14d, 0x4000                 ; TRUNCATE
+    cmp r13, 5
+    jb .attr0
+    or r14d, 0x8000                 ; IOCTL_DEV
+.attr0:
+    mov [rsp], r14
+    xor eax, eax
+    mov [rsp + 8], rax
+    mov [rsp + 16], rax
+    mov esi, 8
+    cmp r13, 4
+    jb .attr
+    mov esi, 16
+    test r12d, POL_NET
+    jnz .net
+    mov qword [rsp + 8], 3          ; TCP: bind i connect
+.net:
+    cmp r13, 6
+    jb .attr
+    mov esi, 24
+    mov qword [rsp + 16], 3         ; gniazda abstrakcyjne i sygnały
+.attr:
+    mov eax, SYS_LL_CREATE
+    mov rdi, rsp
+    xor edx, edx
+    syscall
+    test rax, rax
+    js .ll_fail
+    mov rbp, rax                    ; zbiór reguł
+    mov qword [rsp + 48], -1
+    test r12d, POL_BASE
+    jz .rules
+    mov rax, [r15 + D_BASEFD]       ; JIT: folder pliku .fh
+    test rax, rax
+    jnz .base
+    call rt_exe_dir                 ; plik wykonywalny: jego folder
+    lea rcx, [rax + 1]
+    test rax, rax
+    js .base_set
+    mov [r15 + D_BASEFD], rcx
+    jmp .base_set
+.base:
+    dec rax
+.base_set:
+    mov [rsp + 48], rax
+.rules:
+    mov r13d, [rbx + 4]
+    add rbx, 8
+.rule:
+    test r13d, r13d
+    jz .restrict
+    mov rax, [rbx]
+    test r12d, POL_COMMANDS
+    jz .noexec
+    or rax, 1                       ; EXECUTE
+.noexec:
+    and rax, r14
+    mov [rsp + 32], rax
+    lea rsi, [rbx + 10]
+    mov edi, AT_FDCWD
+    cmp byte [rsi], '/'
+    je .open
+    mov rdi, [rsp + 48]
+    test rdi, rdi
+    js .next                        ; brak folderu programu
+.open:
+    mov eax, SYS_OPENAT
+    mov edx, O_PATH | O_CLOEXEC
+    syscall
+    test rax, rax
+    js .next                        ; folderu nie ma: nic nie dostaje
+    mov [rsp + 40], eax
+    call .add
+    cmp rax, -EINVAL
+    jne .close
+    and qword [rsp + 32], LL_FILE_RIGHTS
+    jz .close
+    call .add
+.close:
+    mov eax, SYS_CLOSE
+    mov edi, [rsp + 40]
+    syscall
+.next:
+    movzx eax, word [rbx + 8]
+    lea rbx, [rbx + rax + 10]
+    dec r13d
+    jmp .rule
+.restrict:
+    call .nnp
+    mov eax, SYS_LL_RESTRICT
+    mov rdi, rbp
+    xor esi, esi
+    syscall
+    mov eax, SYS_CLOSE
+    mov rdi, rbp
+    syscall
+    mov r14d, 1                     ; Landlock działa
+    jmp .limits
+.ll_fail:
+    xor r14d, r14d
+.limits:
+    ; limity zasobów (tanie, w przeciwieństwie do seccomp): bez commands —
+    ; żadnych nowych procesów; bez żadnego importu — żadnych nowych deskryptorów
+    ; (plików, gniazd, io_uring); otwarte wcześniej stdin/stdout/stderr działają
+    xor eax, eax
+    mov [rsp + 56], rax
+    mov [rsp + 64], rax
+    test r12d, POL_COMMANDS
+    jnz .lim_fd
+    mov eax, SYS_SETRLIMIT
+    mov edi, RLIMIT_NPROC
+    lea rsi, [rsp + 56]
+    syscall
+.lim_fd:
+    test r12d, POL_FILES | POL_COMMANDS | POL_NET
+    jnz .need_sec
+    mov eax, SYS_SETRLIMIT
+    mov edi, RLIMIT_NOFILE
+    lea rsi, [rsp + 56]
+    syscall
+.need_sec:
+    ; seccomp, gdy brak Landlock albo gdy pliki/polecenia są, a sieci nie
+    ; (wtedy tylko seccomp zabrania gniazd)
+    test r14d, r14d
+    jz .seccomp
+    test r12d, POL_NET
+    jnz .done
+    test r12d, POL_FILES | POL_COMMANDS
+    jz .done
+.seccomp:
+    call .nnp
+    lea rsi, [rt_filter]
+    lea rdi, [rsp + 72]
+    mov ecx, rt_filter_len
+    rep movsb
+    test r12d, POL_NET
+    jz .f_cmd
+    mov dword [rsp + 72 + 6*8 + 4], -1
+.f_cmd:
+    test r12d, POL_COMMANDS
+    jz .f_load
+    mov ecx, 7
+.f_loop:
+    mov dword [rsp + 72 + rcx*8 + 4], -1
+    inc ecx
+    cmp ecx, 13
+    jb .f_loop
+.f_load:
+    mov word [rsp + 56], rt_filter_len / 8
+    lea rax, [rsp + 72]
+    mov [rsp + 64], rax
+    mov eax, SYS_SECCOMP
+    mov edi, 1                      ; SECCOMP_SET_MODE_FILTER
+    xor esi, esi
+    lea rdx, [rsp + 56]
+    syscall
+.done:
+    add rsp, SB_FRAME
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    ret
+; landlock_add_rule(zbiór, PATH_BENEATH, [rsp + 32 wywołującego])
+.add:
+    mov eax, SYS_LL_ADD
+    mov rdi, rbp
+    mov esi, 1
+    lea rdx, [rsp + 8 + 32]
+    xor r10d, r10d
+    syscall
+    ret
+.nnp:
+    mov eax, SYS_PRCTL
+    mov edi, PR_SET_NO_NEW_PRIVS
+    mov esi, 1
+    xor edx, edx
+    xor r10d, r10d
+    xor r8d, r8d
+    syscall
+    ret
+
+; rt_exe_dir -> rax = deskryptor folderu pliku wykonywalnego albo < 0
+rt_exe_dir:
+    sub rsp, PATH_MAX
+    mov eax, SYS_READLINKAT
+    mov edi, AT_FDCWD
+    lea rsi, [rt_str_exe]
+    mov rdx, rsp
+    mov r10d, PATH_MAX - 1
+    syscall
+    test rax, rax
+    jle .fail
+    mov rcx, rax
+.find:
+    dec rcx
+    js .fail
+    cmp byte [rsp + rcx], '/'
+    jne .find
+    mov byte [rsp + rcx + 1], 0
+    mov eax, SYS_OPENAT
+    mov edi, AT_FDCWD
+    mov rsi, rsp
+    mov edx, O_PATH | O_DIRECTORY | O_CLOEXEC
+    syscall
+    add rsp, PATH_MAX
+    ret
+.fail:
+    mov rax, -1
+    add rsp, PATH_MAX
+    ret
+
+; filtr seccomp (BPF): kod, skok gdy prawda, gdy fałsz, argument
+%macro BPF 4
+    dw %1
+    db %2, %3
+    dd %4
+%endmacro
+align 8
+rt_filter:
+    BPF 0x20, 0, 0, 4               ; architektura
+    BPF 0x15, 1, 0, 0xc000003e      ; x86-64?
+    BPF 0x06, 0, 0, 0x80000000      ; inna: zabij proces
+    BPF 0x20, 0, 0, 0               ; numer wywołania
+    BPF 0x35, 10, 0, 0x40000000     ; x32: odmowa
+    BPF 0x15, 9, 0, 425             ; io_uring_setup
+    BPF 0x15, 8, 0, 41              ; socket (pozycja 6: net)
+    BPF 0x15, 7, 0, 59              ; execve (pozycje 7-12: commands)
+    BPF 0x15, 6, 0, 322             ; execveat
+    BPF 0x15, 5, 0, 57              ; fork
+    BPF 0x15, 4, 0, 58              ; vfork
+    BPF 0x15, 3, 0, 56              ; clone
+    BPF 0x15, 2, 0, 435             ; clone3
+    BPF 0x15, 1, 0, 101             ; ptrace
+    BPF 0x06, 0, 0, 0x7fff0000      ; zezwól
+    BPF 0x06, 0, 0, 0x0005000d      ; odmowa: EACCES
+rt_filter_len equ $ - rt_filter
+rt_str_exe: db "/proc/self/exe", 0
+
 rt_msg_prefix:  db "fih: błąd w linii "
 rt_msg_prefix_len equ $ - rt_msg_prefix
 rt_msg_ovf:     db "przepełnienie: wynik poza zakresem liczb 64-bitowych"
@@ -464,3 +752,4 @@ rt_table:
     dd rt_int - rt_begin        ; RT_INT
     dd rt_input - rt_begin      ; RT_INPUT
     dd rt_inputchar - rt_begin  ; RT_INPUTCHAR
+    dd rt_sandbox - rt_begin    ; RT_SANDBOX

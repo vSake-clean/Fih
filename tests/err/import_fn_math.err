@@ -1,0 +1,1 @@
+fih: błąd w linii 1: nieznana funkcja 'pi' w module math (znane: abs, min, max, pow, sqrt, floor, ceil, round, sin, cos, tan, log, exp, random)

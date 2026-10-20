@@ -3,6 +3,20 @@
 Format oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 Wersje: `0.MINOR.PATCH` (patrz [CONTRIBUTING.md](CONTRIBUTING.md#wersje)).
 
+## [Niewydane] — 0.4 w budowie
+
+### Dodane
+- Importy i uprawnienia: `import math`, `import files [folder] [only ...]`,
+  `import commands [only ...]`, `import net [domena] [only ...]`. Program bez
+  importu nie ma dostępu do plików, sieci ani poleceń. Importy są sprawdzane
+  przed uruchomieniem (nieznany moduł, funkcja, folder poza programem itd.).
+- Blokady jądra na starcie każdego skompilowanego programu (JIT i `fih build`):
+  Landlock (pliki według `import files`, TCP bez `import net`), limity
+  zasobów (bez importów: żadnych nowych plików, gniazd ani procesów) i seccomp
+  (gdy potrzebny). Koszt startu: ok. 14 µs.
+- `tests/sandbox.sh`: sprawdza w gdb, że jądro odmawia tego, czego program nie
+  zaimportował.
+
 ## [0.3.1] - 2026-10-19
 
 ### Zmienione (wydajność — Fih szybszy od C we wszystkich pomiarach)

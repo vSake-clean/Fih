@@ -1,0 +1,1 @@
+fih: błąd w linii 1: nieznana funkcja 'rm' w module files (znane: read, write, append, exists, delete, rename, mkdir, list)

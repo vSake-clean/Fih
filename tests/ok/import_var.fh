@@ -1,0 +1,6 @@
+# "import" bez nazwy modułu za sobą to nadal zmienna (jak w 0.3)
+import = 3
+import += 1
+calc(import)
+importy = 5
+calc(importy)

@@ -66,7 +66,7 @@ Wyjście: liczby `2 3 5 7 11 13 17 19 23 29`, każda w osobnej linii, potem `kon
 program     = { linia } ;
 linia       = [ odstęp ] [ instrukcja [ odstęp ] ] [ komentarz ] [ "\r" ] "\n" ;
 instrukcja  = print | write | calc | przypisanie | if | while | koniec_bloku
-            | "break" | "continue" ;
+            | "break" | "continue" | import ;      (* import: punkt 8 *)
 
 print       = "print" [ odstęp ] "(" [ odstęp ] napis [ odstęp ] ")" ;
 write       = "write" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
@@ -294,7 +294,70 @@ Przykłady:
     `zmienna 'x' nie ma jeszcze wartości`.
 - Najwyżej 65 536 różnych zmiennych.
 
-## 8. Błędy
+## 8. Importy i uprawnienia (0.4, w budowie)
+
+Program bez importów nie ma żadnych uprawnień poza wypisywaniem na ekran
+i czytaniem z klawiatury: nie czyta i nie zapisuje plików, nie łączy się
+z siecią, nie uruchamia poleceń. Każdą z tych możliwości włącza import:
+
+```
+import math                                 # funkcje matematyczne
+import files                                # wszystkie pliki
+import files ./dane                         # tylko <folder programu>/dane
+import files ./dane only read, write        # tylko te funkcje, tylko w ./dane
+import files only read                      # tylko odczyt, wszędzie
+import commands                             # wszystkie polecenia systemu
+import commands only ls, git                # tylko te polecenia
+import net                                  # cała sieć
+import net example.com                      # tylko ten adres
+import net example.com only get             # tylko get, tylko ten adres
+import net only get, post                   # tylko te funkcje
+import net only example.com, localhost      # domeny można podać też w only
+```
+
+W wersji w budowie działają same importy (sprawdzanie składni i blokady
+systemu). Funkcje modułów (`math.sqrt`, `files.read`, ...) dochodzą w kolejnych
+krokach wersji 0.4.
+
+```ebnf
+import      = "import" odstęp moduł [ odstęp miejsce ] [ odstęp "only" odstęp lista ] ;
+moduł       = "math" | "files" | "commands" | "net" ;
+miejsce     = folder | domena ;          (* folder: files, domena: net *)
+lista       = element { [ odstęp ] "," [ odstęp ] element } ;
+```
+
+- Importy stoją na początku pliku: przed nimi mogą być tylko puste linie
+  i komentarze. Import po innej instrukcji to błąd.
+- Kilka importów tego samego modułu sumuje uprawnienia
+  (`import files ./a` i `import files ./b` dają dostęp do obu folderów).
+- Folder jest względny wobec folderu, w którym leży plik `.fh` (w programie
+  po `fih build`: folderu pliku wykonywalnego). Nie może zaczynać się od `/`
+  ani zawierać `..`. `import files .` to cały folder programu. Folder, którego
+  nie ma przy starcie programu, nie daje żadnego dostępu.
+- Funkcje w `only`:
+  - `files`: `read`, `write`, `append`, `exists`, `delete`, `rename`, `mkdir`, `list`;
+  - `net`: `get`, `post`, `download`, `tcp` oraz domeny (słowo z kropką albo `localhost`);
+  - `math`: `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`, `sin`,
+    `cos`, `tan`, `log`, `exp`, `random`;
+  - `commands`: nazwy poleceń (litery, cyfry, `_ . + -`).
+- `import = 5` (bez nazwy modułu za słowem) to nadal zwykłe przypisanie do
+  zmiennej `import`, więc programy 0.3 działają bez zmian.
+
+**Blokady systemu.** Oprócz sprawdzania programu przed uruchomieniem każdy
+program skompilowany przez `fih` (także po `fih build`) na starcie prosi jądro
+Linuksa o odebranie sobie uprawnień, których nie zaimportował:
+
+- Landlock (Linux 5.13+): dostęp do plików tylko według `import files`
+  (folder i funkcje); bez `import net` brak połączeń TCP (Linux 6.7+);
+  sygnały i gniazda abstrakcyjne tylko w obrębie programu (Linux 6.12+),
+- seccomp: bez `import net` brak gniazd sieciowych, bez `import commands` brak
+  uruchamiania programów i tworzenia procesów, zawsze brak `io_uring` i `ptrace`.
+
+Blokad nie da się zdjąć w trakcie działania. Dotyczą też poleceń uruchomionych
+przez `commands`. Na jądrze bez Landlock zostaje seccomp i sprawdzanie przed
+uruchomieniem.
+
+## 9. Błędy
 
 Każdy błąd kończy program komunikatem na stderr i kodem wyjścia 1:
 
@@ -332,11 +395,22 @@ Zgłaszany jest pierwszy błąd w pliku.
 | `nieoczekiwany znak w wyrażeniu` | `calc(2 3)`, `calc(1e3)`, `calc(1 + not 0)` |
 | `brak ')' w wyrażeniu` | `calc((2 + 3)` |
 | `liczba za duża (max 9223372036854775807)` | `calc(9223372036854775808)` |
-| `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (punkt 10) |
+| `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (punkt 11) |
 | `oczekiwano '()' po nazwie funkcji` | `x = input`, `x = input(5)` |
 | `zły zapis znaku (przykład: '+')` | `'ab'`, `'ł'`, `'a` |
 | `za dużo zmiennych (max 65536)` | 65 537. nowa zmienna |
 | `bloki zbyt głęboko zagnieżdżone (max 65536)` | 65 537 bloków jeden w drugim |
+| `nieznany moduł 'x' (znane: math, files, commands, net)` | `import foo` |
+| `oczekiwano nazwy modułu po import (znane: math, files, commands, net)` | `import` |
+| `import musi być na początku pliku, przed innymi instrukcjami` | `x = 1`, potem `import math` |
+| `nieznana funkcja 'x' w module files (znane: ...)` | `import files only rm` |
+| `po only podaj listę, np. only read, write` | `import files only` |
+| `oczekiwano 'only' albo końca linii` | `import files ./a ./b` |
+| `ten moduł nie przyjmuje folderu ani adresu (tylko files i net)` | `import math ./x` |
+| `folder musi być względny wobec folderu programu, np. ./dane` | `import files /etc` |
+| `folder nie może wychodzić poza folder programu ('..')` | `import files ../x` |
+| `zły adres (przykład: example.com)` | `import net zly` |
+| `niedozwolony znak w imporcie` | bajt sterujący w folderze |
 
 ### Błędy w trakcie działania
 
@@ -363,7 +437,7 @@ Implementacja nigdy nie kończy się awarią (sygnałem). Każda sytuacja kończ
 wynikiem albo komunikatem `fih: błąd...`. Wyjątek: zamknięty potok (np.
 `fih p.fh | head -1`) kończy program sygnałem SIGPIPE, jak każdy program w Linuksie.
 
-## 9. Uruchamianie
+## 10. Uruchamianie
 
 ```sh
 ./fih program.fh                  # uruchomienie
@@ -389,7 +463,7 @@ Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na st
 - Kod maszynowy: zmienne leżą w pamięci; dzielenie przez stałą jest
   zamieniane na mnożenie; stałe wyrażenia są liczone podczas kompilacji.
 
-## 10. Limity
+## 11. Limity
 
 - Liczby: 64 bity ze znakiem (punkt 6).
 - Głębokość nawiasów: nawiasy mogą zużyć najwyżej 1/4 limitu stosu
@@ -403,7 +477,7 @@ Kody wyjścia: `0` sukces, `1` błąd, `2` złe argumenty (sposób użycia na st
 - Plik źródłowy jest mapowany do pamięci (`mmap`). Skrócenie pliku w trakcie
   kompilacji daje błąd, a nie awarię.
 
-## 11. Czego nie ma w wersji 0.3
+## 12. Czego nie ma w wersji 0.3
 
 Fih 0.3 nie ma: napisów w zmiennych (`print` przyjmuje tylko napis w
 cudzysłowie, a z wejścia można czytać tylko liczby i pojedyncze znaki),
@@ -412,7 +486,7 @@ argumentów wiersza poleceń, importu innych plików, komentarzy blokowych,
 pętli `for`.
 Plan dalszych wersji: [ROADMAP.md](ROADMAP.md).
 
-## 12. Zmiany wobec wcześniejszych wersji
+## 13. Zmiany wobec wcześniejszych wersji
 
 0.3: nowe słowa zarezerwowane (`write`, `input`, `inputchar`, `inputok`,
 `eof`) — program 0.2 ze zmienną o takiej nazwie trzeba poprawić. Poza tym

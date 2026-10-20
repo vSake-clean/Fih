@@ -21,6 +21,8 @@
 default rel
 
 global comp_compile, comp_run_jit, comp_write_elf
+global blank, skip_ident, end_check, const_need, const_buf, buf_need, ident_tab
+extern imp_statement, imp_policy, imp_need_base
 extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, write_file2
 
 %define K_CONST 0
@@ -43,6 +45,7 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
 %define RT_INT     6
 %define RT_INPUT   7
 %define RT_INPUTCHAR 8
+%define RT_SANDBOX 9
 
 %define HDR_SIZE 16
 
@@ -210,6 +213,8 @@ last_set_cc:  resd 1
 nvars:     resq 1
 block_sp:  resq 1
 proof_sp:  resq 1
+pol_off:   resq 1           ; opis uprawnień (imp_policy) w stałych
+seen_stmt: resq 1           ; 1 = była już instrukcja inna niż import
 img_ptr:   resq 1           ; złożony obraz programu
 img_len:   resq 1
 data_size: resq 1
@@ -1780,6 +1785,14 @@ end_check:
     ret
 
 
+; at_eol -> ZF=1, gdy kursor na końcu linii albo przy komentarzu
+at_eol:
+    cmp r12, r13
+    jae .yes
+    cmp byte [r12], '#'
+.yes:
+    ret
+
 ; scan_string — kursor za otwierającym '"'; -> rbx = początek treści,
 ; rbp = koniec (zamykający '"'), kursor za '"'
 scan_string:
@@ -1990,6 +2003,31 @@ statement:
     call skip_ident
     mov rbp, r12
     sub rbp, rbx                    ; rbx = nazwa, rbp = długość
+    cmp rbp, 6
+    jne .not_import
+    cmp dword [rbx], 'impo'
+    jne .not_import
+    cmp word [rbx + 4], 'rt'
+    jne .not_import
+    ; "import" i za spacją nazwa: import modułu; "import = 1" to nadal zmienna
+    call blank
+    call at_eol
+    je err_import_name
+    movzx eax, byte [r12]
+    lea rcx, [ident_tab]
+    cmp byte [rcx + rax], 0
+    je .import_var
+    sub eax, '0'
+    cmp eax, 9
+    jbe .import_var
+    cmp byte [seen_stmt], 0
+    jne err_import_late
+    call imp_statement
+    jmp .ret
+.import_var:
+    lea r12, [rbx + 6]
+.not_import:
+    mov byte [seen_stmt], 1
     mov rdi, rbx
     mov rsi, rbp
     call kw_id
@@ -2313,6 +2351,7 @@ statement:
 
 ; --- } / } else { / } else if warunek { ---
 .close:
+    mov byte [seen_stmt], 1
     cmp qword [block_sp], 0
     je err_rbrace
     inc r12
@@ -2438,6 +2477,8 @@ comp_compile:
     sub rcx, rax
     mov [hard_floor], rcx
     mov qword [cur_line], 1
+    mov edi, RT_SANDBOX             ; najpierw blokady z importów (rt_sandbox)
+    call emit_call_rt
 .line:
     cmp r14, [src_end]
     jae .eof
@@ -2469,6 +2510,8 @@ comp_compile:
 .done:
     mov edi, RT_EXIT
     call emit_call_rt
+    call imp_policy
+    mov [pol_off], rax
     call link
     pop r15
     pop r14
@@ -2568,7 +2611,8 @@ link:
     ; nagłówek: przesunięcie tabeli nazw
     lea rax, [r14 + r15]
     stosq
-    xor eax, eax
+    mov rax, [pol_off]              ; przesunięcie opisu uprawnień
+    add rax, r14
     stosq
     ; kod, kod rzadki, stałe
     mov rsi, [code_buf]
@@ -2620,8 +2664,9 @@ link:
     pop rbx
     ret
 
-; comp_run_jit — uruchamia złożony obraz w pamięci (nie wraca)
+; comp_run_jit(rdi=ścieżka programu) — uruchamia złożony obraz w pamięci (nie wraca)
 comp_run_jit:
+    push rdi
     mov eax, SYS_MPROTECT
     mov rdi, [img_ptr]
     mov rsi, [img_cap]
@@ -2640,6 +2685,50 @@ comp_run_jit:
     cmp rax, -4095
     jae nomem
     mov r15, rax
+    pop rdi
+    cmp byte [imp_need_base], 0
+    je .start
+    ; folder programu (dla import files ./folder): katalog ze ścieżki pliku
+    sub rsp, PATH_MAX
+    mov rsi, rdi
+    mov rdi, rsp
+    xor ecx, ecx                    ; pozycja za ostatnim '/'
+.copy:
+    mov al, [rsi]
+    test al, al
+    jz .copied
+    mov [rdi], al
+    inc rsi
+    inc rdi
+    cmp al, '/'
+    jne .copy_next
+    mov rcx, rdi
+.copy_next:
+    mov rax, rdi
+    sub rax, rsp
+    cmp rax, PATH_MAX - 2
+    jb .copy
+.copied:
+    test rcx, rcx
+    jnz .cut
+    mov rcx, rsp                    ; bez '/': bieżący folder
+    mov byte [rcx], '.'
+    inc rcx
+.cut:
+    mov byte [rcx], 0
+    mov eax, SYS_OPENAT
+    mov edi, AT_FDCWD
+    mov rsi, rsp
+    mov edx, O_PATH | O_DIRECTORY | O_CLOEXEC
+    syscall
+    add rsp, PATH_MAX
+    inc rax
+    test rax, rax
+    jg .base
+    mov rax, -1                     ; folderu nie ma: reguły względne nie działają
+.base:
+    mov [r15 + D_BASEFD], rax
+.start:
     mov eax, [rt_table + RT_SIZE*4]
     add rax, HDR_SIZE
     add rax, [img_ptr]
@@ -2727,4 +2816,6 @@ CERR err_rparen_e,      "brak ')' w wyrażeniu"
 CERR err_big,           "liczba za duża (max 9223372036854775807)"
 CERR err_too_deep,      "wyrażenie zbyt głęboko zagnieżdżone"
 CERR err_func,          "oczekiwano '()' po nazwie funkcji"
+CERR err_import_name,   "oczekiwano nazwy modułu po import (znane: math, files, commands, net)"
+CERR err_import_late,   "import musi być na początku pliku, przed innymi instrukcjami"
 CERR err_char_lit,      "zły zapis znaku (przykład: '+')"

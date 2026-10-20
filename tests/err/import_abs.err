@@ -1,0 +1,1 @@
+fih: błąd w linii 1: folder musi być względny wobec folderu programu, np. ./dane

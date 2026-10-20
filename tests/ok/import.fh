@@ -1,0 +1,13 @@
+# importy: uprawnienia programu (0.4)
+
+import math
+import files ./dane only read, write   # komentarz po imporcie
+import files only list
+import files .
+import commands only ls, git, python3, my-tool
+import net example.com only get
+import net only post,tcp, localhost, api.example.org
+	import   math   only sqrt , pow
+import files ./a/b/c only delete,rename,mkdir,exists,append
+x = 2
+calc(x * 21)

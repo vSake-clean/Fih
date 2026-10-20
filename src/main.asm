@@ -17,7 +17,6 @@ extern run_program, out_to_memory, out_reset, out_held_stdout
 extern write_all, write_elf, die_noline, expr_init, bail_rsp, bail_ip
 extern comp_compile, comp_run_jit, comp_write_elf
 
-%define PATH_MAX 4096
 
 %define SA_RESTORER 0x04000000
 %define SYS_RT_SIGRETURN 15
@@ -45,7 +44,9 @@ msg_help_usage_len equ $ - msg_help
                 db '  while w { ... }        pętla; break, continue', 10
                 db '  write("napis")         jak print, bez nowej linii; write(wyrażenie) wypisuje liczbę', 10
                 db "Wyrażenia: + - * / % ( ), == != < <= > >= (także 0 < x < 10), and or not.", 10
-                db "Wejście: input() liczba z linii, inputok(), inputchar() kod znaku ('+'), eof().", 10, 10
+                db "Wejście: input() liczba z linii, inputok(), inputchar() kod znaku ('+'), eof().", 10
+                db "Uprawnienia (na początku pliku): import math | files [./folder] | commands | net [domena],", 10
+                db "  zawężane: import files ./dane only read, write. Bez importu: brak dostępu.", 10, 10
                 db "Kody wyjścia: 0 sukces, 1 błąd w programie, 2 złe argumenty.", 10
                 db "Specyfikacja: https://github.com/vSake-clean/Fih/blob/main/SPEC.md", 10
 msg_help_len    equ $ - msg_help
@@ -243,6 +244,7 @@ do_jit:
     mov rdi, [src_ptr]
     mov rsi, [src_len]
     call comp_compile
+    mov rdi, [rsp+16]       ; ścieżka programu (folder dla importów)
     jmp comp_run_jit
 
 ; run_fast -> eax = 0: program wykonał silnik 0.1, wynik w pamięci (io.asm);

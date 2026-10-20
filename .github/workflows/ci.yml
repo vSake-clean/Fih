@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: sudo apt-get update && sudo apt-get install -y nasm gdb
       - run: make
       - run: make test
       - name: fuzz (krótki)

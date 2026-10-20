@@ -10,6 +10,7 @@
 %define D_INOK      32          ;   wynik inputok(),
 %define D_EOF       40          ;   wynik eof(),
 %define D_INSKIP    48          ;   1 = pomijamy resztę za długiej linii
+%define D_BASEFD    56          ; folder programu dla importów: fd + 1 (0 = folder pliku wykonywalnego)
 %define D_OUTBUF    64          ; bufor wyjścia
 %define D_OUTSZ     65536
 %define D_INBUF     (D_OUTBUF + D_OUTSZ)    ; bufor wejścia
@@ -60,9 +61,23 @@
 %define SYS_MUNMAP  11
 %define MREMAP_MAYMOVE 1
 
+%define PATH_MAX    4096
+%define SYS_OPENAT  257
+%define AT_FDCWD    -100
+%define O_PATH      0x200000
+%define O_DIRECTORY 0x10000
+%define O_CLOEXEC   0x80000
+
 %define O_WRONLY    1
 %define O_CREAT     64
 %define O_TRUNC     512
+
+; flagi opisu uprawnień (imp.asm -> rt_sandbox)
+%define POL_FILES    1
+%define POL_COMMANDS 2
+%define POL_NET      4
+%define POL_MATH     8
+%define POL_BASE     16         ; są reguły z folderem względnym
 
 ; ERR etykieta, "komunikat" — skok pod etykietę kończy program błędem
 ; z numerem bieżącej linii (funkcja die z io.asm)
