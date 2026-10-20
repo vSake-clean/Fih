@@ -1,0 +1,7 @@
+write("Jak masz na imię? ")
+imie = inputtext()
+while inputok() {
+    print("Cześć, " + imie + "! (" + len(imie) + " znaków)")
+    imie = inputtext()
+}
+print("koniec, eof=" + eof())

@@ -23,11 +23,18 @@ default rel
 global comp_compile, comp_run_jit, comp_write_elf
 global blank, skip_ident, end_check, const_need, const_buf, buf_need, ident_tab
 extern imp_statement, imp_policy, imp_need_base
+extern fmt_int
 extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, write_file2
 
 %define K_CONST 0
 %define K_VAR   1
 %define K_REG   2
+; teksty (rodzaj > K_REG): K_TREG — w rax (adres) i rdx (długość),
+; K_TLIT — stała: wartość = przesunięcie w stałych | długość << 32,
+; K_TVAR — zmienna tekstowa (nr)
+%define K_TREG  3
+%define K_TLIT  4
+%define K_TVAR  5
 
 ; części obrazu (dla poprawek adresów)
 %define S_RT    0
@@ -46,6 +53,18 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
 %define RT_INPUT   7
 %define RT_INPUTCHAR 8
 %define RT_SANDBOX 9
+%define RT_TMPRESET 10
+%define RT_CAT     11
+%define RT_INT2TEXT 12
+%define RT_SETTEXT 13
+%define RT_APPEND  14
+%define RT_STREQ   15
+%define RT_LEN     16
+%define RT_INDEX   17
+%define RT_SLICE   18
+%define RT_INPUTTEXT 19
+%define RT_NL      20
+%define RT_CATINT  21
 
 %define HDR_SIZE 16
 
@@ -185,6 +204,9 @@ kw_tab:
     db 7, "inputok"
     db 3, "eof"
     db 0
+; funkcje wbudowane rozpoznawane po nawiasie (nie są słowami zarezerwowanymi)
+fn_len:       db "len"
+fn_inputtext: db "inputtext"
 kw_not: db "not"
 kw_and: db "and"
 kw_or:  db "or"
@@ -193,6 +215,12 @@ msg_nomem_len equ $ - msg_nomem
 msg_unk1:   db "nieznana zmienna '"
 msg_unk1_len equ $ - msg_unk1
 msg_q:      db "'"
+msg_var1:   db "zmienna '"
+msg_var1_len equ $ - msg_var1
+msg_is_num: db "' jest liczbą, nie tekstem"
+msg_is_num_len equ $ - msg_is_num
+msg_is_text: db "' jest tekstem, nie liczbą"
+msg_is_text_len equ $ - msg_is_text
 
 section .bss
 code_buf:  resq 3           ; ptr, len, cap
@@ -215,6 +243,7 @@ block_sp:  resq 1
 proof_sp:  resq 1
 pol_off:   resq 1           ; opis uprawnień (imp_policy) w stałych
 seen_stmt: resq 1           ; 1 = była już instrukcja inna niż import
+stmt_tmp:  resq 1           ; 1 = wyrażenie użyło obszaru tymczasowego tekstów
 img_ptr:   resq 1           ; złożony obraz programu
 img_len:   resq 1
 data_size: resq 1
@@ -224,6 +253,7 @@ var_ptr:   resq MAX_VARS
 var_len:   resd MAX_VARS
 var_off:   resd MAX_VARS
 var_assigned: resb MAX_VARS ; przypisana we wcześniejszej instrukcji (w tekście)
+var_type:  resb MAX_VARS    ; 0 = jeszcze nieznany, 1 = liczba, 2 = tekst
 var_proven:   resb MAX_VARS ; na pewno ma wartość w tym miejscu programu
 proof_stack:  resd MAX_VARS
 blocks:    resb MAX_BLOCKS * 32
@@ -505,6 +535,7 @@ patch_here:
 materialize:
     cmp edi, K_REG
     je .ret
+    ja err_need_num
     cmp edi, K_VAR
     je .var
     test rsi, rsi
@@ -535,6 +566,8 @@ materialize:
 
 ; load_rcx(edi=rodzaj K_CONST/K_VAR, rsi=wartość) — wartość do rcx; zmienia rax
 load_rcx:
+    cmp edi, K_REG
+    ja err_need_num
     cmp edi, K_VAR
     je .var
     movsxd rax, esi
@@ -1224,6 +1257,8 @@ expr:
     jbe .compare
     ; + - * / %: prawy argument o priorytecie wyższym
     mov r15d, eax
+    cmp ebx, K_REG
+    ja .text_left
     mov r9, -1
     cmp ebx, K_REG
     jne .nopush
@@ -1237,6 +1272,8 @@ expr:
     pop r15
     pop r9
     mov ecx, eax
+    cmp eax, K_REG
+    ja .r_text
     mov edi, r15d
     mov esi, ebx
     mov r8, rbp
@@ -1244,6 +1281,33 @@ expr:
     mov ebx, eax
     mov rbp, rdx
     jmp .loop
+.r_text:
+    ; liczba + tekst: łączenie (liczba jako tekst)
+    cmp r15d, OP_ADD
+    jne err_text_op
+.cat:
+    mov esi, ebx
+    mov r8, rbp
+    call cat_gen
+    mov ebx, eax
+    mov rbp, rdx
+    jmp .loop
+.text_left:
+    ; tekst + ...: tylko łączenie
+    cmp r15d, OP_ADD
+    jne err_text_op
+    mov r9, -1
+    cmp ebx, K_TREG
+    jne .tl_nopush
+    EMIT 0x50, 0x52                 ; push rax / push rdx (lewy tekst)
+    mov r9, [code_buf + 8]
+.tl_nopush:
+    push r9
+    inc edi
+    call expr
+    pop r9
+    mov ecx, eax
+    jmp .cat
 
 .logic:
     ; and / or: lewy argument sprawdzony od razu, prawy liczony tylko w razie potrzeby
@@ -1292,6 +1356,8 @@ expr:
     jmp .loop
 
 .compare:
+    cmp ebx, K_REG
+    ja .tcompare
     ; łańcuch porównań a < b < c: przy fałszu skok do "wynik 0" (lista na stosie)
     push 0
     mov r15d, eax
@@ -1306,6 +1372,8 @@ expr:
     push r15
     mov edi, P_CMP + 1
     call expr
+    cmp eax, K_REG
+    ja err_cmp_mix
     pop r15
     pop r9
     push rax
@@ -1367,6 +1435,43 @@ expr:
     call resolve
     EMIT 0x31, 0xc0
     mov dword [last_set_end], -1
+    jmp .loop
+
+.tcompare:
+    ; tekst == tekst, tekst != tekst (bez łańcuchów)
+    mov r15d, eax
+    cmp eax, OP_EQ
+    je .tc_ok
+    cmp eax, OP_NE
+    jne err_text_op
+.tc_ok:
+    mov r9, -1
+    cmp ebx, K_TREG
+    jne .tc_nopush
+    EMIT 0x50, 0x52                 ; push rax / push rdx
+    mov r9, [code_buf + 8]
+.tc_nopush:
+    push r9
+    push r15
+    mov edi, P_CMP + 1
+    call expr
+    pop r15
+    pop r9
+    cmp eax, K_REG
+    jbe err_cmp_mix
+    mov ecx, eax
+    mov edi, r15d
+    mov esi, ebx
+    mov r8, rbp
+    call tcmp_gen
+    mov ebx, eax
+    mov rbp, rdx
+    call ws
+    call peek_binop
+    cmp eax, OP_EQ
+    jb .loop
+    cmp eax, OP_GE
+    jbe err_text_chain
     jmp .loop
 
 .ret:
@@ -1462,13 +1567,31 @@ unary:
     pop rbx
     ret
 
-; primary -> eax, rdx: liczba, zmienna albo wyrażenie w nawiasie
+; primary -> eax, rdx: prosty element i ewentualne indeksy tekstu t[i], t[a:b]
 primary:
+    call primary0
+.post:
+    push rax
+    call ws
+    pop rax
+    AT '['
+    jne .ret
+    cmp eax, K_REG
+    jbe err_index_int
+    call index_gen
+    jmp .post
+.ret:
+    ret
+
+; primary0 -> eax, rdx: liczba, napis, zmienna, funkcja albo wyrażenie w nawiasie
+primary0:
     cmp r12, r13
     jae err_incomplete
     movzx eax, byte [r12]
     cmp al, '('
     je .paren
+    cmp al, '"'
+    je .text
     cmp al, "'"
     je .char
     lea ecx, [rax - '0']
@@ -1515,6 +1638,20 @@ primary:
 .num_done:
     mov eax, K_CONST
     ret
+.text:
+    ; napis w wyrażeniu: stała tekstowa
+    push rbx
+    push rbp
+    inc r12
+    call scan_string
+    xor ecx, ecx
+    call text_const
+    shl rdx, 32
+    or rdx, rax
+    mov eax, K_TLIT
+    pop rbp
+    pop rbx
+    ret
 .name:
     push rbx
     mov rbx, r12
@@ -1527,6 +1664,30 @@ primary:
     jae .func
     cmp eax, KW_AND
     jae .kw_bad
+    ; len( / inputtext(: funkcje wbudowane (nazwa przed nawiasem)
+    mov rcx, r12
+    sub rcx, rbx
+    push r12
+    call ws
+    AT '('
+    pop r12
+    jne .var
+    cmp ecx, 3
+    jne .not_len
+    mov ax, [rbx]
+    cmp ax, 'le'
+    jne .not_len
+    cmp byte [rbx + 2], 'n'
+    je .len
+.not_len:
+    cmp ecx, 9
+    jne .var
+    mov rax, [rbx]
+    cmp rax, [fn_inputtext]
+    jne .var
+    cmp byte [rbx + 8], 't'
+    je .inputtext
+.var:
     mov rdi, rbx
     mov rsi, r12
     sub rsi, rbx
@@ -1540,7 +1701,66 @@ primary:
     mov edi, eax
     call emit_var_check
     mov eax, K_VAR
+    lea rcx, [var_type]
+    cmp byte [rcx + rbx], 2
+    jne .var_kind
+    mov eax, K_TVAR
+.var_kind:
     mov edx, ebx
+    pop rbx
+    ret
+.inputtext:
+    call ws
+    inc r12                         ; '('
+    call ws
+    AT ')'
+    jne err_func
+    inc r12
+    mov edi, RT_INPUTTEXT
+    call emit_call_rt
+    mov qword [stmt_tmp], 1
+    mov eax, K_TREG
+    pop rbx
+    ret
+.len:
+    ; len(tekst) -> liczba znaków
+    call ws
+    mov rax, [paren_depth]
+    cmp rax, [max_depth]
+    jae err_too_deep
+    cmp rsp, [hard_floor]
+    jb err_too_deep
+    inc qword [paren_depth]
+    inc r12                         ; '('
+    xor edi, edi
+    call expr
+    push rax
+    call ws
+    pop rax
+    AT ')'
+    jne err_rparen_e
+    inc r12
+    dec qword [paren_depth]
+    cmp eax, K_REG
+    jbe err_len_text
+    cmp eax, K_TLIT
+    jne .len_gen
+    mov rcx, rdx                    ; stała: liczba znaków od razu
+    shr rcx, 32
+    mov esi, edx
+    add rsi, [const_buf]
+    call utf8_count
+    mov rdx, rax
+    mov eax, K_CONST
+    pop rbx
+    ret
+.len_gen:
+    mov edi, eax
+    mov rsi, rdx
+    call tmaterialize
+    mov edi, RT_LEN
+    call emit_call_rt
+    mov eax, K_REG
     pop rbx
     ret
 .kw_bad:
@@ -1755,6 +1975,613 @@ lookup:
     pop rbx
     ret
 
+; ===================== teksty =====================
+
+; text_const(rbx=początek, rbp=koniec treści napisu, ecx=1: dopisz '\n')
+; -> rax = przesunięcie w stałych, rdx = długość (sekwencje ucieczki rozwinięte)
+text_const:
+    push r10
+    push r9
+    mov r10d, ecx
+    mov r9, [const_buf + 8]
+    mov rax, rbp
+    sub rax, rbx
+    inc rax
+    call const_need
+    mov rdi, rax
+    mov rsi, rbx
+.loop:
+    cmp rsi, rbp
+    jae .end
+    mov al, [rsi]
+    inc rsi
+    cmp al, '\'
+    jne .put
+    mov al, [rsi]
+    inc rsi
+    cmp al, 'n'
+    je .n
+    cmp al, 't'
+    je .t
+    cmp al, '\'
+    je .put
+    cmp al, '"'
+    je .put
+    jmp err_escape
+.n: mov al, 10
+    jmp .put
+.t: mov al, 9
+.put:
+    mov [rdi], al
+    inc rdi
+    jmp .loop
+.end:
+    test r10d, r10d
+    jz .nonl
+    mov byte [rdi], 10
+    inc rdi
+.nonl:
+    sub rdi, [const_buf]
+    mov [const_buf + 8], rdi        ; długość po rozwinięciu
+    mov rdx, rdi
+    sub rdx, r9
+    mov rax, r9
+    pop r9
+    pop r10
+    ret
+
+; tmaterialize(edi=rodzaj tekstu, rsi=wartość) — kod: tekst do rax, rdx;
+; zmienia tylko rax
+tmaterialize:
+    cmp edi, K_TREG
+    je .ret
+    cmp edi, K_TLIT
+    je .lit
+    EMIT 0x49, 0x8b, 0x87           ; mov rax, [r15 + disp32]
+    push rcx
+    mov ecx, esi
+    shl ecx, 4
+    add ecx, D_VARS
+    EMITD ecx
+    pop rcx
+    EMIT 0x48, 0x8b, 0x50, 0x08     ; mov rdx, [rax + 8]
+    EMIT 0x48, 0x83, 0xc0, 0x10     ; add rax, 16
+.ret:
+    ret
+.lit:
+    push rdi
+    push rsi
+    EMIT 0x48, 0x8d, 0x05           ; lea rax, [rip + napis]
+    mov edi, S_CONST
+    call emit_rel
+    EMIT 0xba                       ; mov edx, długość
+    mov rsi, [rsp]
+    shr rsi, 32
+    EMITD esi
+    pop rsi
+    pop rdi
+    ret
+
+; tload2(edi=rodzaj tekstu, rsi=wartość) — kod: tekst do rcx, r8; zmienia tylko rax
+tload2:
+    cmp edi, K_TREG
+    je .reg
+    cmp edi, K_TLIT
+    je .lit
+    EMIT 0x49, 0x8b, 0x8f           ; mov rcx, [r15 + disp32]
+    push rcx
+    mov ecx, esi
+    shl ecx, 4
+    add ecx, D_VARS
+    EMITD ecx
+    pop rcx
+    EMIT 0x4c, 0x8b, 0x41, 0x08     ; mov r8, [rcx + 8]
+    EMIT 0x48, 0x83, 0xc1, 0x10     ; add rcx, 16
+    ret
+.reg:
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax
+    EMIT 0x49, 0x89, 0xd0           ; mov r8, rdx
+    ret
+.lit:
+    push rdi
+    push rsi
+    EMIT 0x48, 0x8d, 0x0d           ; lea rcx, [rip + napis]
+    mov edi, S_CONST
+    call emit_rel
+    EMIT 0x41, 0xb8                 ; mov r8d, długość
+    mov rsi, [rsp]
+    shr rsi, 32
+    EMITD esi
+    pop rsi
+    pop rdi
+    ret
+
+; to_text(edi=rodzaj, rsi=wartość) -> eax, rdx: tekst (liczba zamieniona na
+; zapis dziesiętny: stała podczas kompilacji, inaczej w trakcie — rt_int2text,
+; które zachowuje rcx i r8)
+to_text:
+    mov eax, edi
+    mov rdx, rsi
+    cmp edi, K_REG
+    ja .ret
+    cmp edi, K_CONST
+    je .const
+    call materialize
+    mov edi, RT_INT2TEXT
+    call emit_call_rt
+    mov qword [stmt_tmp], 1
+    mov eax, K_TREG
+.ret:
+    ret
+.const:
+    push rbx
+    push rcx
+    push r8
+    push r9
+    push r10
+    sub rsp, 32
+    mov rdi, rsi
+    lea rsi, [rsp + 32]
+    call fmt_int                    ; -> rax = początek cyfr
+    lea rbx, [rsp + 32]
+    sub rbx, rax                    ; długość
+    push rax
+    mov r9, [const_buf + 8]
+    mov rax, rbx
+    call const_need
+    mov rdi, rax
+    pop rsi
+    mov rcx, rbx
+    rep movsb
+    add rsp, 32
+    mov rdx, rbx
+    shl rdx, 32
+    or rdx, r9
+    mov eax, K_TLIT
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rbx
+    ret
+
+; lit_concat(rsi=stała A, rdx=stała B) -> rdx = stała A + B
+lit_concat:
+    push rbx
+    push rcx
+    push r8
+    push r9
+    mov r8, rsi
+    mov r9, rdx
+    mov rbx, r8
+    shr rbx, 32
+    mov rcx, r9
+    shr rcx, 32
+    add rbx, rcx                    ; długość wyniku
+    mov rcx, [const_buf + 8]        ; przesunięcie wyniku
+    push rcx
+    mov rax, rbx
+    call const_need                 ; (bufor mógł się przenieść)
+    mov rdi, rax
+    mov rsi, [const_buf]
+    mov eax, r8d
+    add rsi, rax
+    mov rcx, r8
+    shr rcx, 32
+    rep movsb
+    mov rsi, [const_buf]
+    mov eax, r9d
+    add rsi, rax
+    mov rcx, r9
+    shr rcx, 32
+    rep movsb
+    pop rdx
+    shl rbx, 32
+    or rdx, rbx
+    pop r9
+    pop r8
+    pop rcx
+    pop rbx
+    ret
+
+; lit_like(edi=rodzaj) -> ZF=1 dla stałej (K_TLIT albo K_CONST)
+%macro LIT_LIKE 1
+    cmp %1, K_TLIT
+    je %%done
+    cmp %1, K_CONST
+%%done:
+%endmacro
+
+; cat_gen(esi=rodzaj L, r8=wartość L, ecx=rodzaj P, rdx=wartość P,
+;         r9=pozycja za push lewego argumentu albo -1) -> eax, rdx: L + P
+; Lewy argument w rejestrach (K_TREG, K_REG) został wcześniej odłożony na stos
+; (push rax / push rdx dla tekstu, push rax dla liczby).
+cat_gen:
+    push rbx
+    push rbp
+    push r14
+    push r15
+    mov ebx, esi
+    mov rbp, r8
+    mov r14d, ecx
+    mov r15, rdx
+    LIT_LIKE ebx
+    jne .run
+    LIT_LIKE r14d
+    jne .run
+    ; obie strony stałe: łączenie podczas kompilacji
+    mov edi, r14d
+    mov rsi, r15
+    call to_text
+    mov r15, rdx
+    mov edi, ebx
+    mov rsi, rbp
+    call to_text
+    mov rsi, rdx
+    mov rdx, r15
+    call lit_concat
+    mov eax, K_TLIT
+    jmp .ret
+.run:
+    cmp ebx, K_REG
+    jbe .run_any
+    cmp r14d, K_REG                 ; tekst + liczba (nie stała): cyfry
+    je .ci_reg                      ; dopisywane od razu (rt_cat_int)
+    cmp r14d, K_VAR
+    je .ci_var
+.run_any:
+    cmp ebx, K_TREG
+    je .l_treg
+    cmp ebx, K_REG
+    je .l_reg
+    ; L w pamięci albo stała: P do rcx, r8, potem L do rax, rdx
+    mov edi, r14d
+    mov rsi, r15
+    call to_text
+    mov edi, eax
+    mov rsi, rdx
+    call tload2
+    mov edi, ebx
+    mov rsi, rbp
+    call to_text
+    mov edi, eax
+    mov rsi, rdx
+    call tmaterialize
+    jmp .cat
+.l_treg:
+    cmp r14d, K_TLIT
+    je .t_undo
+    cmp r14d, K_TVAR
+    je .t_undo
+    cmp r14d, K_CONST
+    jne .t_pop
+.t_undo:
+    cmp r9, [code_buf + 8]
+    jne .t_pop
+    sub qword [code_buf + 8], 2     ; P nie zmienił rejestrów: bez push/pop
+    mov edi, r14d
+    mov rsi, r15
+    call to_text
+    mov edi, eax
+    mov rsi, rdx
+    call tload2
+    jmp .cat
+.t_pop:
+    call .right_regs
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+    jmp .cat
+.l_reg:
+    cmp r14d, K_TLIT
+    je .r_undo
+    cmp r14d, K_TVAR
+    je .r_undo
+    cmp r14d, K_CONST
+    jne .r_pop
+.r_undo:
+    cmp r9, [code_buf + 8]
+    jne .r_pop
+    dec qword [code_buf + 8]        ; liczba L dalej w rax
+    mov edi, RT_INT2TEXT
+    call emit_call_rt
+    mov edi, r14d
+    mov rsi, r15
+    call to_text
+    mov edi, eax
+    mov rsi, rdx
+    call tload2
+    jmp .cat
+.r_pop:
+    call .right_regs
+    EMIT 0x58                       ; pop rax (liczba L)
+    mov edi, RT_INT2TEXT
+    call emit_call_rt
+.cat:
+    mov edi, RT_CAT
+.call:
+    call emit_call_rt
+    mov qword [stmt_tmp], 1
+    mov eax, K_TREG
+.ret:
+    pop r15
+    pop r14
+    pop rbp
+    pop rbx
+    ret
+.ci_reg:
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax (liczba)
+    cmp ebx, K_TREG
+    jne .ci_lmem
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+    jmp .ci_call
+.ci_var:
+    cmp ebx, K_TREG
+    jne .ci_var_mem
+    cmp r9, [code_buf + 8]
+    jne .ci_var_pop
+    sub qword [code_buf + 8], 2     ; zmienna nie zmienia rejestrów: bez push/pop
+    mov edi, K_VAR
+    mov rsi, r15
+    call load_rcx
+    jmp .ci_call
+.ci_var_pop:
+    mov edi, K_VAR
+    mov rsi, r15
+    call load_rcx
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+    jmp .ci_call
+.ci_var_mem:
+    mov edi, K_VAR
+    mov rsi, r15
+    call load_rcx
+.ci_lmem:
+    mov edi, ebx
+    mov rsi, rbp
+    call tmaterialize
+.ci_call:
+    mov edi, RT_CATINT
+    jmp .call
+; P jako tekst do rcx, r8 przez rax, rdx (L czeka na stosie)
+.right_regs:
+    mov edi, r14d
+    mov rsi, r15
+    call to_text
+    mov edi, eax
+    mov rsi, rdx
+    call tmaterialize
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax
+    EMIT 0x49, 0x89, 0xd0           ; mov r8, rdx
+    ret
+
+; tcmp_gen(edi=OP_EQ/OP_NE, esi=rodzaj L, r8=wartość L, ecx=rodzaj P,
+;          rdx=wartość P, r9=pozycja za push L albo -1) -> eax, rdx: liczba 1/0
+tcmp_gen:
+    push rbx
+    push rbp
+    push r14
+    push r15
+    push rdi
+    mov ebx, esi
+    mov rbp, r8
+    mov r14d, ecx
+    mov r15, rdx
+    cmp ebx, K_TLIT
+    jne .run
+    cmp r14d, K_TLIT
+    jne .run
+    ; dwie stałe: wynik podczas kompilacji
+    xor edx, edx
+    mov rcx, rbp
+    shr rcx, 32
+    mov rax, r15
+    shr rax, 32
+    cmp rcx, rax
+    jne .folded
+    mov rsi, [const_buf]
+    mov rdi, rsi
+    mov eax, ebp
+    add rsi, rax
+    mov eax, r15d
+    add rdi, rax
+    mov edx, 1
+    test rcx, rcx
+    jz .folded
+    repe cmpsb
+    je .folded
+    xor edx, edx
+.folded:
+    pop rdi
+    cmp edi, OP_NE
+    jne .f_ok
+    xor edx, 1
+.f_ok:
+    mov eax, K_CONST
+    jmp .ret
+.run:
+    cmp ebx, K_TREG
+    jne .l_mem
+    cmp r14d, K_TREG
+    je .pop
+    cmp r9, [code_buf + 8]
+    jne .pop
+    sub qword [code_buf + 8], 2     ; P nie zmienił rejestrów: bez push/pop
+    mov edi, r14d
+    mov rsi, r15
+    call tload2
+    jmp .call
+.pop:
+    mov edi, r14d
+    mov rsi, r15
+    call tmaterialize
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax
+    EMIT 0x49, 0x89, 0xd0           ; mov r8, rdx
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+    jmp .call
+.l_mem:
+    mov edi, r14d
+    mov rsi, r15
+    call tload2
+    mov edi, ebx
+    mov rsi, rbp
+    call tmaterialize
+.call:
+    mov edi, RT_STREQ
+    call emit_call_rt
+    pop rdi
+    cmp edi, OP_NE
+    jne .r_ok
+    EMIT 0x83, 0xf0, 0x01           ; xor eax, 1
+.r_ok:
+    mov eax, K_REG
+.ret:
+    pop r15
+    pop r14
+    pop rbp
+    pop rbx
+    ret
+
+; tmp_done — koniec wyrażenia, które użyło obszaru tymczasowego: kod czyści
+; obszar (rt_tmp_reset zachowuje rax); zmienia rax, rsi, rdi
+tmp_done:
+    cmp qword [stmt_tmp], 0
+    je .ret
+    mov qword [stmt_tmp], 0
+    mov edi, RT_TMPRESET
+    jmp emit_call_rt
+.ret:
+    ret
+
+; index_gen(eax=rodzaj tekstu, rdx=wartość; kursor na '[') -> eax, rdx:
+; t[i] (jeden znak) albo t[a:b], t[:b], t[a:] (wycinek)
+index_gen:
+    push rbx
+    push rbp
+    push r14
+    push r15
+    mov ebx, eax
+    mov rbp, rdx
+    mov rax, [paren_depth]
+    cmp rax, [max_depth]
+    jae err_too_deep
+    cmp rsp, [hard_floor]
+    jb err_too_deep
+    inc qword [paren_depth]
+    inc r12
+    cmp ebx, K_TREG
+    jne .np
+    EMIT 0x50, 0x52                 ; push rax / push rdx (tekst)
+.np:
+    call ws
+    mov r14d, K_CONST               ; brak początku: 0
+    xor r15d, r15d
+    AT ':'
+    je .slice
+    xor edi, edi
+    call expr
+    cmp eax, K_REG
+    ja err_index_num
+    mov r14d, eax
+    mov r15, rdx
+    call ws
+    AT ']'
+    je .single
+    AT ':'
+    jne err_rbracket
+    cmp r14d, K_REG
+    jne .slice
+    EMIT 0x50                       ; push rax (początek)
+.slice:
+    inc r12
+    call ws
+    AT ']'
+    je .s_nob
+    xor edi, edi
+    call expr
+    cmp eax, K_REG
+    ja err_index_num
+    mov edi, eax
+    mov rsi, rdx
+    call materialize
+    EMIT 0x49, 0x89, 0xc0           ; mov r8, rax (koniec)
+    call ws
+    AT ']'
+    jne err_rbracket
+    jmp .s_a
+.s_nob:
+    EMIT 0x49, 0xb8                 ; mov r8, INT64_MAX (do końca)
+    mov rax, 0x7fffffffffffffff
+    mov rcx, rax
+    EMITQ rcx
+.s_a:
+    inc r12
+    cmp r14d, K_REG
+    jne .s_a_mem
+    EMIT 0x59                       ; pop rcx (początek)
+    jmp .s_t
+.s_a_mem:
+    mov edi, r14d
+    mov rsi, r15
+    call load_rcx
+.s_t:
+    call .text_regs
+    mov edi, RT_SLICE
+    call emit_call_rt
+    jmp .done
+.single:
+    inc r12
+    cmp r14d, K_REG
+    jne .i_mem
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax
+    jmp .i_t
+.i_mem:
+    mov edi, r14d
+    mov rsi, r15
+    call load_rcx
+.i_t:
+    call .text_regs
+    mov edi, RT_INDEX
+    call emit_call_rt
+    mov edi, RT_DIE                 ; jc: indeks poza tekstem
+    mov esi, 2
+    call make_stub
+    mov esi, eax
+    mov edi, 2
+    call emit_jcc_cold
+.done:
+    dec qword [paren_depth]
+    mov eax, K_TREG
+    pop r15
+    pop r14
+    pop rbp
+    pop rbx
+    ret
+; tekst (ebx, rbp) do rax, rdx — ze stosu, gdy był w rejestrach
+.text_regs:
+    cmp ebx, K_TREG
+    jne .tr_mem
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+    ret
+.tr_mem:
+    mov edi, ebx
+    mov rsi, rbp
+    jmp tmaterialize
+
+; utf8_count(rsi=dane, rcx=długość) -> rax = liczba znaków
+utf8_count:
+    xor eax, eax
+.loop:
+    test rcx, rcx
+    jz .ret
+    movzx edx, byte [rsi]
+    inc rsi
+    dec rcx
+    and edx, 0xc0
+    cmp edx, 0x80
+    je .loop
+    inc rax
+    jmp .loop
+.ret:
+    ret
+
 ; ===================== instrukcje =====================
 
 ; blank — pomija spacje, tabulatory i '\r' (do r13)
@@ -1827,6 +2654,8 @@ bare_expr:
     cmp al, '#'
     je .cut
     inc rdi
+    cmp al, '"'
+    je .str
     cmp al, "'"
     jne .scan
     cmp rdi, r13
@@ -1842,6 +2671,19 @@ bare_expr:
     jne .scan
     inc rdi
     jmp .scan
+.str:                               ; '#' w napisie też nie
+    cmp rdi, r13
+    jae .whole
+    mov al, [rdi]
+    inc rdi
+    cmp al, '"'
+    je .scan
+    cmp al, '\'
+    jne .str
+    cmp rdi, r13
+    jae .whole
+    inc rdi
+    jmp .str
 .cut:
     mov r13, rdi
 .whole:
@@ -1865,6 +2707,11 @@ lbrace:
 emit_cond:
     cmp eax, K_CONST
     jne .not_const
+    push rsi
+    push rdx
+    call tmp_done
+    pop rdx
+    pop rsi
     test rdx, rdx
     jnz .ret                        ; zawsze prawda: bez skoku
     mov edi, -1
@@ -1872,6 +2719,8 @@ emit_cond:
 .not_const:
     cmp eax, K_REG
     jne .gen
+    cmp qword [stmt_tmp], 0
+    jne .gen                        ; najpierw czyszczenie obszaru tekstów
     mov ecx, [code_buf + 8]
     cmp ecx, [last_set_end]
     jne .gen
@@ -1887,6 +2736,7 @@ emit_cond:
     push rsi
     mov rsi, rdx
     call materialize
+    call tmp_done
     pop rsi
     EMIT 0x48, 0x85, 0xc0           ; test rax, rax
     mov edi, 4                      ; jz
@@ -1900,6 +2750,8 @@ store_var:
     mov ebp, ebx
     shl ebp, 4
     add ebp, D_VARS
+    cmp eax, K_REG
+    ja .text
     cmp eax, K_CONST
     jne .gen
     movsxd rcx, edx
@@ -1915,6 +2767,15 @@ store_var:
     call materialize
     EMIT 0x49, 0x89, 0x87           ; mov [r15 + disp32], rax
     EMITD ebp
+    jmp .flag
+.text:
+    mov edi, eax
+    mov rsi, rdx
+    call tmaterialize
+    EMIT 0x49, 0x8d, 0xbf           ; lea rdi, [r15 + disp32]
+    EMITD ebp
+    mov edi, RT_SETTEXT
+    call emit_call_rt
 .flag:
     lea rax, [var_proven]
     cmp byte [rax + rbx], 0
@@ -2057,78 +2918,41 @@ statement:
     pop rbx
     ret
 
-; --- print("napis") / write("napis") / write(wyrażenie) ---
+; --- print(...) / write(...): napis, tekst albo liczba (print z '\n') ---
 .write:
     call open_paren
     mov dword [str_nl], 0
-    AT '"'
-    je .str
-    call bare_expr                  ; write(wyrażenie): liczba bez '\n'
-    mov r14d, eax
-    mov r15, rdx
-    call blank
-    AT ')'
-    jne err_rparen_expr
-    inc r12
-    call end_check
-    mov edi, r14d
-    mov rsi, r15
-    call materialize
-    mov edi, RT_INT
-    call emit_call_rt
-    jmp .ret
+    jmp .out
 .print:
     call open_paren
     mov dword [str_nl], 1
+.out:
     AT '"'
-    jne err_string
-.str:
+    jne .out_expr
+    ; sam napis w cudzysłowie: jedna stała (z '\n' dla print)
+    mov r14, r12
     inc r12
     call scan_string
-    call close_paren_str
-    ; treść z rozwiniętymi sekwencjami ucieczki do stałych
-    mov r14, [const_buf + 8]        ; przesunięcie napisu
-    mov rax, rbp
-    sub rax, rbx
-    inc rax
-    call const_need
-    mov rdi, rax
-    mov rsi, rbx
-.p_loop:
-    cmp rsi, rbp
-    jae .p_end
-    mov al, [rsi]
-    inc rsi
-    cmp al, '\'
-    jne .p_put
-    mov al, [rsi]
-    inc rsi
-    cmp al, 'n'
-    je .p_n
-    cmp al, 't'
-    je .p_t
-    cmp al, '\'
-    je .p_put
-    cmp al, '"'
-    je .p_put
-    jmp err_escape
-.p_n: mov al, 10
-    jmp .p_put
-.p_t: mov al, 9
-.p_put:
-    mov [rdi], al
-    inc rdi
-    jmp .p_loop
-.p_end:
-    cmp dword [str_nl], 0
-    je .p_nonl
-    mov byte [rdi], 10
-    inc rdi
-.p_nonl:
-    sub rdi, [const_buf]
-    mov [const_buf + 8], rdi        ; długość po rozwinięciu
-    mov r15, rdi
-    sub r15, r14                    ; długość napisu z '\n'
+    call blank
+    AT ')'
+    je .str
+    ; dalej operator albo indeks: napis to początek wyrażenia,
+    ; inaczej (koniec linii, inne znaki) brak ')' po napisie
+    AT '['
+    je .str_expr
+    call peek_binop
+    test eax, eax
+    jz err_rparen
+.str_expr:
+    mov r12, r14
+    jmp .out_expr
+.str:
+    inc r12
+    call end_check
+    mov ecx, [str_nl]
+    call text_const
+    mov r14, rax                    ; przesunięcie napisu
+    mov r15, rdx                    ; długość (z '\n')
     EMIT 0x48, 0x8d, 0x35           ; lea rsi, [rip + napis]
     mov edi, S_CONST
     mov esi, r14d
@@ -2145,6 +2969,39 @@ statement:
 .p_call:
     mov edi, RT_WRITE
     call emit_call_rt
+    jmp .ret
+.out_expr:
+    call bare_expr
+    mov r14d, eax
+    mov r15, rdx
+    call blank
+    AT ')'
+    jne err_rparen_expr
+    inc r12
+    call end_check
+    mov edi, r14d
+    mov rsi, r15
+    cmp edi, K_REG
+    ja .out_text
+    call materialize
+    mov edi, RT_INT
+    cmp dword [str_nl], 0
+    je .out_int
+    mov edi, RT_INT_NL
+.out_int:
+    call emit_call_rt
+    jmp .out_done
+.out_text:
+    call tmaterialize
+    EMIT 0x48, 0x89, 0xc6           ; mov rsi, rax
+    mov edi, RT_WRITE
+    call emit_call_rt
+    cmp dword [str_nl], 0
+    je .out_done
+    mov edi, RT_NL
+    call emit_call_rt
+.out_done:
+    call tmp_done
     jmp .ret
 
 ; --- calc("wyrażenie") albo calc(wyrażenie) ---
@@ -2186,6 +3043,7 @@ statement:
     call materialize
     mov edi, RT_INT_NL
     call emit_call_rt
+    call tmp_done
     jmp .ret
 
 ; --- if warunek { ---
@@ -2337,17 +3195,138 @@ statement:
     call end_check
     pop rdx
     pop rax
+    lea rcx, [var_type]
+    movzx ecx, byte [rcx + rbx]     ; 0 = nowa, 1 = liczba, 2 = tekst
     test r14d, r14d
-    jz .a_store
+    jz .a_plain_type
+    cmp ecx, 2
+    je .a_text_op
+    cmp eax, K_REG
+    ja .a_mismatch
     mov ecx, eax                    ; x op wyrażenie
     mov edi, r14d
     mov esi, K_VAR
     mov r8d, ebx
     mov r9, -1
     call gen_binop
+    jmp .a_store
+.a_text_op:
+    ; s += wyrażenie: dopisanie (liczba jako tekst); inne działania to błąd
+    cmp r14d, OP_ADD
+    jne err_text_op
+    mov edi, eax
+    mov rsi, rdx
+    call to_text
+    mov r8, rdx
+    shr r8, 32
+    cmp eax, K_TLIT
+    jne .a_append
+    dec r8
+    cmp r8, 3
+    jbe .a_append_short
+.a_append:
+    mov edi, eax
+    mov rsi, rdx
+    call tmaterialize
+    EMIT 0x49, 0x8d, 0xbf           ; lea rdi, [r15 + disp32]
+    mov eax, ebx
+    shl eax, 4
+    add eax, D_VARS
+    mov ecx, eax
+    EMITD ecx
+    mov edi, RT_APPEND
+    call emit_call_rt
+    jmp .a_done
+.a_append_short:
+    ; s += "1-4 B": w kodzie jeden zapis 4 B, gdy jest miejsce w bloku
+    push rdx
+    EMIT 0x4d, 0x8b, 0x8f           ; mov r9, [r15 + disp32]
+    mov ecx, ebx
+    shl ecx, 4
+    add ecx, D_VARS
+    EMITD ecx
+    EMIT 0x4d, 0x8b, 0x51, 0x08, 0x4d, 0x8d, 0x5a, 0x04, 0x4d, 0x3b, 0x19, 0x77, 0
+    mov r9, [code_buf + 8]          ; ↑ mov r10, [r9 + 8] / lea r11, [r10 + 4]
+    EMIT 0x43, 0xc7, 0x44, 0x11, 0x10   ; cmp r11, [r9] / ja wolno
+    mov rdx, [rsp]                  ; mov dword [r9 + r10 + 16], bajty napisu
+    mov rsi, [const_buf]
+    mov ecx, edx
+    add rsi, rcx
+    shr rdx, 32
+    xor eax, eax
+.a_as_byte:
+    dec edx
+    js .a_as_imm
+    shl eax, 8
+    mov al, [rsi + rdx]
+    jmp .a_as_byte
+.a_as_imm:
+    mov ecx, eax
+    EMITD ecx
+    EMIT 0x49, 0x83, 0xc2           ; add r10, długość
+    mov rdx, [rsp]
+    shr rdx, 32
+    EMIT dl
+    EMIT 0x4d, 0x89, 0x51, 0x08, 0xeb, 0    ; mov [r9 + 8], r10 / jmp dalej
+    mov rax, [code_buf]
+    mov rcx, [code_buf + 8]
+    mov edx, ecx
+    sub edx, r9d
+    mov [rax + r9 - 1], dl          ; ja -> wolna ścieżka
+    push rcx
+    mov edi, K_TLIT
+    mov rsi, [rsp + 8]
+    call tmaterialize
+    EMIT 0x49, 0x8d, 0xbf           ; lea rdi, [r15 + disp32]
+    mov ecx, ebx
+    shl ecx, 4
+    add ecx, D_VARS
+    EMITD ecx
+    mov edi, RT_APPEND
+    call emit_call_rt
+    pop rcx
+    pop rdx
+    mov rax, [code_buf]
+    mov rdx, [code_buf + 8]
+    sub edx, ecx
+    mov [rax + rcx - 1], dl         ; jmp -> za wolną ścieżką
+    jmp .a_done
+.a_plain_type:
+    ; rodzaj zmiennej ustala pierwsze przypisanie w tekście programu
+    mov r8d, 1
+    cmp eax, K_REG
+    jbe .a_kind
+    mov r8d, 2
+.a_kind:
+    test ecx, ecx
+    jz .a_set_type
+    cmp ecx, r8d
+    jne .a_mismatch
+    jmp .a_store
+.a_set_type:
+    lea rcx, [var_type]
+    mov [rcx + rbx], r8b
 .a_store:
     call store_var
+.a_done:
+    call tmp_done
     jmp .ret
+.a_mismatch:
+    ; ecx = rodzaj zmiennej
+    lea r8, [msg_is_num]
+    mov r9d, msg_is_num_len
+    cmp ecx, 1
+    je .a_mm_msg
+    lea r8, [msg_is_text]
+    mov r9d, msg_is_text_len
+.a_mm_msg:
+    lea rax, [var_ptr]
+    mov rdx, [rax + rbx*8]
+    lea rax, [var_len]
+    mov ecx, [rax + rbx*4]
+    lea rdi, [msg_var1]
+    mov esi, msg_var1_len
+    jmp die_name
 
 ; --- } / } else { / } else if warunek { ---
 .close:
@@ -2794,7 +3773,6 @@ comp_write_elf:
 
 CERR err_char,          "nieoczekiwany znak na początku instrukcji"
 CERR err_lparen,        "oczekiwano '(' po nazwie instrukcji"
-CERR err_string,        "oczekiwano napisu w cudzysłowie"
 CERR err_unterminated,  "niezamknięty napis"
 CERR err_rparen,        "oczekiwano ')' po napisie"
 CERR err_rparen_expr,   "oczekiwano ')' po wyrażeniu"
@@ -2818,4 +3796,12 @@ CERR err_too_deep,      "wyrażenie zbyt głęboko zagnieżdżone"
 CERR err_func,          "oczekiwano '()' po nazwie funkcji"
 CERR err_import_name,   "oczekiwano nazwy modułu po import (znane: math, files, commands, net)"
 CERR err_import_late,   "import musi być na początku pliku, przed innymi instrukcjami"
+CERR err_need_num,      "tu potrzebna jest liczba, nie tekst"
+CERR err_text_op,       "tekst można tylko łączyć (+) i porównywać (== !=)"
+CERR err_cmp_mix,       "nie można porównać tekstu z liczbą"
+CERR err_text_chain,    "porównań tekstów nie można łączyć w łańcuch (użyj and)"
+CERR err_len_text,      "len przyjmuje tekst"
+CERR err_index_int,     "indeks [ ] działa tylko na tekście"
+CERR err_index_num,     "indeks musi być liczbą"
+CERR err_rbracket,      "brak ']' po indeksie"
 CERR err_char_lit,      "zły zapis znaku (przykład: '+')"

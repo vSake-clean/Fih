@@ -11,7 +11,12 @@
 %define D_EOF       40          ;   wynik eof(),
 %define D_INSKIP    48          ;   1 = pomijamy resztę za długiej linii
 %define D_BASEFD    56          ; folder programu dla importów: fd + 1 (0 = folder pliku wykonywalnego)
-%define D_OUTBUF    64          ; bufor wyjścia
+%define D_TMPPTR    64          ; obszar tymczasowy tekstów (wyniki pośrednie
+%define D_TMPEND    72          ;   jednej instrukcji): wolne miejsce, koniec
+%define D_TMPCHUNK  80          ;   kawałka, kawałek (dq poprzedni, dq rozmiar, dane)
+%define D_HEAPPTR   88          ; pamięć zmiennych tekstowych: wolne miejsce,
+%define D_HEAPEND   96          ;   koniec kawałka
+%define D_OUTBUF    128         ; bufor wyjścia
 %define D_OUTSZ     65536
 %define D_INBUF     (D_OUTBUF + D_OUTSZ)    ; bufor wejścia
 %define D_INSZ      65536

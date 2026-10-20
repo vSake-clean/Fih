@@ -166,7 +166,10 @@ def main():
     stats = {"ok": 0, "err": 0}
     for i in range(count):
         src = gen_program(r)
-        stats["ok" if oracle.run(src)[2] == 0 else "err"] += 1
+        try:
+            stats["ok" if oracle.run(src)[2] == 0 else "err"] += 1
+        except oracle.Steps:
+            continue
         problems = check(src, tmp)
         if problems:
             failures += 1

@@ -1,0 +1,3 @@
+t = "żółw"
+print(t[3])
+print(t[4])

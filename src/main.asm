@@ -37,14 +37,15 @@ msg_usage_len   equ $ - msg_usage
 msg_help:       db "Fih ", FIH_VERSION, " — język programowania w assembly x86-64", 10, 10
 msg_help_usage_len equ $ - msg_help
                 db 10, "Instrukcje (jedna na linię, komentarze od #):", 10
-                db '  print("napis")         wypisuje napis; sekwencje \n \t \\ \"', 10
+                db '  print("napis")         wypisuje napis; sekwencje \n \t \\ \"; print(w) wartość', 10
                 db '  calc(wyrażenie)        wypisuje wartość wyrażenia (liczby całkowite 64-bit)', 10
                 db '  x = wyrażenie          przypisanie; także += -= *= /= %=', 10
                 db '  if w { ... } else if w { ... } else { ... }', 10
                 db '  while w { ... }        pętla; break, continue', 10
-                db '  write("napis")         jak print, bez nowej linii; write(wyrażenie) wypisuje liczbę', 10
+                db '  write("napis")         jak print, bez nowej linii; write(wyrażenie) wypisuje wartość', 10
                 db "Wyrażenia: + - * / % ( ), == != < <= > >= (także 0 < x < 10), and or not.", 10
-                db "Wejście: input() liczba z linii, inputok(), inputchar() kod znaku ('+'), eof().", 10
+                db 'Teksty: t = "Ala" + 5, t += "!", == !=, len(t), t[0], t[-1], t[1:3] (znaki UTF-8).', 10
+                db "Wejście: input() liczba z linii, inputtext() tekst, inputok(), inputchar() kod znaku ('+'), eof().", 10
                 db "Uprawnienia (na początku pliku): import math | files [./folder] | commands | net [domena],", 10
                 db "  zawężane: import files ./dane only read, write. Bez importu: brak dostępu.", 10, 10
                 db "Kody wyjścia: 0 sukces, 1 błąd w programie, 2 złe argumenty.", 10

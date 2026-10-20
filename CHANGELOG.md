@@ -16,6 +16,17 @@ Wersje: `0.MINOR.PATCH` (patrz [CONTRIBUTING.md](CONTRIBUTING.md#wersje)).
   (gdy potrzebny). Koszt startu: ok. 14 µs.
 - `tests/sandbox.sh`: sprawdza w gdb, że jądro odmawia tego, czego program nie
   zaimportował.
+- Teksty w zmiennych: `t = "Ala"`, łączenie `+` (także z liczbą:
+  `"Wynik: " + n`), dopisywanie `t += ...`, porównania `==` `!=`, `len(t)`
+  (liczba znaków UTF-8), `t[i]`, wycinki `t[a:b]` (jak w Pythonie),
+  `inputtext()` (cała linia z wejścia). Rodzaj zmiennej (liczba/tekst) ustala
+  pierwsze przypisanie; pomyłki są błędami przed uruchomieniem.
+- `print(wyrażenie)`: `print(2 + 3)` wypisuje `5`.
+- `tests/fuzz/text_fuzz.py`: losowe programy na tekstach porównywane z Pythonem.
+
+### Zmienione
+- `print(2)` nie jest już błędem (komunikat `oczekiwano napisu w cudzysłowie`
+  zniknął).
 
 ## [0.3.1] - 2026-10-19
 

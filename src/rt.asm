@@ -358,7 +358,8 @@ rt_exit:
     xor edi, edi
     syscall
 
-; rt_die(edi=linia, esi=rodzaj: 0 przepełnienie, 1 dzielenie przez zero)
+; rt_die(edi=linia, esi=rodzaj: 0 przepełnienie, 1 dzielenie przez zero,
+; 2 indeks poza tekstem)
 rt_die:
     push rdi
     push rsi
@@ -369,9 +370,14 @@ rt_die:
     mov edx, rt_msg_ovf_len
     lea rcx, [rt_msg_div0]
     mov r8d, rt_msg_div0_len
-    test esi, esi
-    cmovnz rax, rcx
-    cmovnz edx, r8d
+    cmp esi, 1
+    cmove rax, rcx
+    cmove edx, r8d
+    lea rcx, [rt_msg_index]
+    mov r8d, rt_msg_index_len
+    cmp esi, 2
+    cmove rax, rcx
+    cmove edx, r8d
     mov rsi, rax
     mov edi, STDERR
     call rt_write_or_die
@@ -435,6 +441,828 @@ rt_err_end:
     mov edx, 1
     call rt_write_or_die
     jmp rt_exit1
+
+; ===================== teksty =====================
+; Tekst w rejestrach: adres i długość w bajtach (UTF-8). Zmienna tekstowa
+; trzyma wskaźnik do bloku: dq pojemność, dq długość, dane. Wyniki pośrednie
+; (łączenie, liczba jako tekst, inputtext) trafiają do obszaru tymczasowego,
+; czyszczonego po każdej instrukcji (rt_tmp_reset). Wycinki (t[i], t[a:b])
+; nie kopiują: wskazują na fragment tekstu źródłowego.
+%define BIG_BLOCK 65536             ; od tylu bajtów blok zmiennej ma własne mmap
+
+; rt_mmap(rsi=rozmiar) -> rax = pamięć; zmienia rcx, rdx, rdi, r8-r11
+rt_mmap:
+    mov eax, SYS_MMAP
+    xor edi, edi
+    mov edx, PROT_READ | PROT_WRITE
+    mov r10d, MAP_PRIVATE | MAP_ANONYMOUS
+    mov r8, -1
+    xor r9d, r9d
+    syscall
+    cmp rax, -4095
+    jae rt_nomem
+    ret
+rt_nomem:
+    call rt_flush
+    mov edi, STDERR
+    lea rsi, [rt_msg_nomem]
+    mov edx, rt_msg_nomem_len
+    call rt_write_or_die
+    jmp rt_exit1
+
+; rt_copy(rdi=cel, rsi=źródło, rcx=n) — jak rep movsb (rdi, rsi za kopią,
+; rcx = 0), ale szybciej dla krótkich tekstów; także gdy cel < źródło
+; i się nakładają; zmienia r11, xmm0, xmm1
+rt_copy:
+    cmp rcx, 16
+    ja .big
+    cmp rcx, 8
+    jb .small
+    movq xmm0, [rsi]                ; 8-16 B: dwa nakładające się odczyty
+    movq xmm1, [rsi + rcx - 8]
+    movq [rdi], xmm0
+    movq [rdi + rcx - 8], xmm1
+.adv:
+    add rsi, rcx
+    add rdi, rcx
+    xor ecx, ecx
+    ret
+.small:
+    cmp rcx, 4
+    jb .tiny
+    movd xmm0, [rsi]
+    movd xmm1, [rsi + rcx - 4]
+    movd [rdi], xmm0
+    movd [rdi + rcx - 4], xmm1
+    jmp .adv
+.tiny:
+    test rcx, rcx
+    jz .ret
+    cmp rcx, 2
+    jb .one
+    movzx r11d, word [rsi]          ; 2-3 B: słowo i ostatni bajt
+    mov [rdi], r11w
+.one:
+    movzx r11d, byte [rsi + rcx - 1]
+    mov [rdi + rcx - 1], r11b
+    jmp .adv
+.ret:
+    ret
+.big:
+    cmp rcx, 32
+    ja .rep
+    movdqu xmm0, [rsi]
+    movdqu xmm1, [rsi + rcx - 16]
+    movdqu [rdi], xmm0
+    movdqu [rdi + rcx - 16], xmm1
+    jmp .adv
+.rep:
+    rep movsb
+    ret
+
+; rt_tmp_alloc(rcx=n) -> rax = n bajtów w obszarze tymczasowym; zmienia r11
+rt_tmp_alloc:
+    mov rax, [r15 + D_TMPPTR]
+    lea r11, [rax + rcx]
+    cmp r11, [r15 + D_TMPEND]
+    ja .new
+    mov [r15 + D_TMPPTR], r11
+    ret
+.new:
+    ; nowy kawałek: max(2 × poprzedni, n + nagłówek, 64 KB); poprzednie
+    ; kawałki zostają do końca instrukcji (mogą w nich leżeć wyniki)
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    xor esi, esi
+    mov rax, [r15 + D_TMPCHUNK]
+    test rax, rax
+    jz .size
+    mov rsi, [rax + 8]
+    add rsi, rsi
+.size:
+    lea rax, [rcx + 16 + 4095]
+    and rax, -4096
+    cmp rsi, rax
+    cmovb rsi, rax
+    mov eax, 65536
+    cmp rsi, rax
+    cmovb rsi, rax
+    push rsi
+    call rt_mmap
+    pop rsi
+    mov rcx, [r15 + D_TMPCHUNK]
+    mov [rax], rcx
+    mov [rax + 8], rsi
+    mov [r15 + D_TMPCHUNK], rax
+    add rsi, rax
+    mov [r15 + D_TMPEND], rsi
+    add rax, 16
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    lea r11, [rax + rcx]
+    mov [r15 + D_TMPPTR], r11
+    ret
+
+; rt_tmp_reset — koniec instrukcji: obszar tymczasowy znów pusty (zostaje
+; największy kawałek, starsze są zwalniane); zachowuje rax
+rt_tmp_reset:
+    mov rcx, [r15 + D_TMPCHUNK]
+    test rcx, rcx
+    jz .ret
+    lea rdx, [rcx + 16]
+    mov [r15 + D_TMPPTR], rdx
+    mov rdx, [rcx]
+    test rdx, rdx
+    jz .ret
+    mov qword [rcx], 0
+    push rax
+.free:
+    mov rdi, rdx
+    mov rsi, [rdx + 8]
+    mov rdx, [rdx]
+    mov eax, SYS_MUNMAP
+    syscall
+    test rdx, rdx
+    jnz .free
+    pop rax
+.ret:
+    ret
+
+; rt_cat(rax, rdx = A; rcx, r8 = B) -> rax, rdx = A + B
+rt_cat:
+    test r8, r8
+    jz .ret
+    test rdx, rdx
+    jz .b
+    lea r9, [rax + rdx]
+    cmp r9, [r15 + D_TMPPTR]
+    jne .copy
+    lea r10, [r9 + r8]
+    cmp r10, [r15 + D_TMPEND]
+    ja .copy
+    ; A kończy się na szczycie obszaru tymczasowego: B dopisujemy w miejscu
+    ; (łańcuch a + b + c kopiuje każdy kawałek raz)
+    mov [r15 + D_TMPPTR], r10
+    mov rdi, r9
+    mov rsi, rcx
+    mov rcx, r8
+    call rt_copy
+    add rdx, r8
+    ret
+.copy:
+    push rax
+    push rdx
+    push rcx
+    push r8
+    lea rcx, [rdx + r8]
+    call rt_tmp_alloc
+    mov rdi, rax
+    pop r8
+    pop r9
+    pop rcx
+    pop rsi
+    call rt_copy
+    mov rsi, r9
+    mov rcx, r8
+    call rt_copy
+    mov rdx, rdi
+    sub rdx, rax
+    ret
+.b:
+    mov rax, rcx
+    mov rdx, r8
+.ret:
+    ret
+
+; rt_fmt(rax=liczba ze znakiem, rsi=koniec bufora) -> rsi = początek zapisu
+; dziesiętnego; po dwie cyfry (tablica par, dzielenie przez 100 mnożeniem);
+; zmienia rax, rdx, r9, r10, r11
+rt_fmt:
+    mov r11, rax
+    test rax, rax
+    jns .pos
+    neg rax                         ; INT64_MIN bez znaku daje poprawny moduł
+.pos:
+    lea r10, [rt_digits2]
+.pair:
+    cmp rax, 100
+    jb .last
+    mov r9, rax
+    shr rax, 2                      ; n / 100 = ((n >> 2) × c) >> 66
+    mov rdx, 0x28f5c28f5c28f5c3
+    mul rdx
+    shr rdx, 2
+    imul rax, rdx, 100
+    sub r9, rax                     ; reszta 0..99
+    movzx eax, word [r10 + r9*2]
+    sub rsi, 2
+    mov [rsi], ax
+    mov rax, rdx
+    jmp .pair
+.last:
+    cmp eax, 10
+    jb .one
+    movzx eax, word [r10 + rax*2]
+    sub rsi, 2
+    mov [rsi], ax
+    jmp .sign
+.one:
+    add al, '0'
+    dec rsi
+    mov [rsi], al
+.sign:
+    test r11, r11
+    jns .ret
+    dec rsi
+    mov byte [rsi], '-'
+.ret:
+    ret
+
+; rt_numlen(rax=liczba ze znakiem) -> r9 = długość zapisu dziesiętnego;
+; cyfry = t + 1 - (n < 10^t), t = (bity(n) × 1233) >> 12; zmienia rax, r10, r11
+rt_numlen:
+    xor r9d, r9d
+    mov r10, rax
+    test r10, r10
+    jns .pos
+    neg r10
+    inc r9d                         ; minus
+.pos:
+    or r10, 1                       ; 0 ma jedną cyfrę jak 1
+    bsr r11, r10
+    inc r11d
+    imul r11d, r11d, 1233
+    shr r11d, 12
+    lea r9d, [r9 + r11 + 1]
+    lea rax, [rt_pow10]
+    cmp r10, [rax + r11*8]
+    sbb r9d, 0
+    ret
+
+; rt_int2text(rax=liczba) -> rax, rdx = zapis dziesiętny; zachowuje rcx, r8
+rt_int2text:
+    push rcx
+    push r8
+    mov r8, rax
+    call rt_numlen
+    mov rcx, r9
+    call rt_tmp_alloc
+    push rax
+    push r9
+    lea rsi, [rax + r9]             ; cyfry od razu na miejscu, od końca
+    mov rax, r8
+    call rt_fmt
+    pop rdx
+    pop rax
+    pop r8
+    pop rcx
+    ret
+
+; rt_cat_int(rax, rdx = tekst A; rcx = liczba) -> rax, rdx = A + zapis liczby
+; (cyfry pisane od razu na miejscu, bez tekstu pośredniego)
+rt_cat_int:
+    test rdx, rdx
+    jnz .go
+    mov rax, rcx
+    jmp rt_int2text
+.go:
+    mov r8, rax
+    mov rax, rcx
+    call rt_numlen
+    lea r10, [r8 + rdx]
+    cmp r10, [r15 + D_TMPPTR]
+    jne .copy
+    lea r11, [r10 + r9]
+    cmp r11, [r15 + D_TMPEND]
+    ja .copy
+    ; A na szczycie obszaru tymczasowego: cyfry zaraz za nim
+    mov [r15 + D_TMPPTR], r11
+    mov rsi, r11
+    push rdx
+    push r8
+    push r9
+    mov rax, rcx
+    call rt_fmt
+    pop r9
+    pop rax
+    pop rdx
+    add rdx, r9
+    ret
+.copy:
+    push rcx                        ; liczba
+    push r9                         ; długość cyfr
+    lea rcx, [rdx + r9]
+    call rt_tmp_alloc
+    mov rdi, rax
+    mov rsi, r8
+    mov rcx, rdx
+    push rax
+    call rt_copy                    ; A
+    add rdi, [rsp + 8]              ; koniec wyniku
+    mov rsi, rdi
+    mov rax, [rsp + 16]
+    call rt_fmt
+    pop rax
+    mov rdx, rdi
+    sub rdx, rax
+    add rsp, 16
+    ret
+
+; rt_heap_alloc(rcx=pojemność) -> rax = blok ([rax] = pojemność, może większa)
+rt_heap_alloc:
+    lea r11, [rcx + 16 + 7]
+    and r11, -8
+    cmp r11, BIG_BLOCK
+    jae .big
+    mov rax, [r15 + D_HEAPPTR]
+    add r11, rax
+    cmp r11, [r15 + D_HEAPEND]
+    ja .chunk
+    mov [r15 + D_HEAPPTR], r11
+    sub r11, rax
+    sub r11, 16
+    mov [rax], r11
+    ret
+.chunk:
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    mov esi, 1 << 20
+    call rt_mmap
+    mov [r15 + D_HEAPPTR], rax
+    add rax, 1 << 20
+    mov [r15 + D_HEAPEND], rax
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    jmp rt_heap_alloc
+.big:
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    lea rsi, [r11 + 4095]
+    and rsi, -4096
+    push rsi
+    call rt_mmap
+    pop rsi
+    sub rsi, 16
+    mov [rax], rsi
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    ret
+
+; rt_heap_free(rdi=blok albo 0) — duże bloki wracają do systemu, małe zostają
+rt_heap_free:
+    test rdi, rdi
+    jz .ret
+    mov rsi, [rdi]
+    add rsi, 16
+    cmp rsi, BIG_BLOCK
+    jb .ret
+    mov eax, SYS_MUNMAP
+    syscall
+.ret:
+    ret
+
+; rt_set_text(rdi=zmienna, rax, rdx = tekst) — kopia tekstu do bloku zmiennej
+rt_set_text:
+    mov r9, [rdi]
+    test r9, r9
+    jz .grow
+    cmp rdx, [r9]
+    ja .grow
+    mov [r9 + 8], rdx
+    lea rdi, [r9 + 16]
+    cmp rdi, rax
+    je .ret                         ; x = x
+    mov rsi, rax                    ; źródło może leżeć w tym bloku (x = x[1:]):
+    mov rcx, rdx                    ; kopia w przód jest wtedy poprawna
+    call rt_copy
+.ret:
+    ret
+.grow:
+    xor ecx, ecx                    ; pojemność: max(długość, 2 × stara, 16)
+    test r9, r9
+    jz .g1
+    mov rcx, [r9]
+    add rcx, rcx
+.g1:
+    cmp rcx, rdx
+    cmovb rcx, rdx
+    mov r8d, 16
+    cmp rcx, r8
+    cmovb rcx, r8
+    push rdi
+    push rax
+    push rdx
+    push r9
+    call rt_heap_alloc
+    pop r9
+    pop rdx
+    pop rsi
+    pop rdi
+    mov [rdi], rax
+    mov [rax + 8], rdx
+    lea rdi, [rax + 16]
+    mov rcx, rdx
+    call rt_copy
+    mov rdi, r9
+    jmp rt_heap_free
+
+; rt_append(rdi=zmienna, rax, rdx = tekst) — s += tekst, w miejscu gdy się mieści
+rt_append:
+    test rdx, rdx
+    jz .ret
+    mov r9, [rdi]
+    mov r10, [r9 + 8]
+    lea r11, [r10 + rdx]
+    cmp r11, [r9]
+    ja .grow
+    mov [r9 + 8], r11
+    lea rdi, [r9 + 16 + r10]        ; dopisany tekst może pochodzić z tego bloku
+    mov rsi, rax                    ; (s += s[0:2]) — nie nachodzi na cel
+    mov rcx, rdx
+    cmp rdx, 3
+    ja .copy
+    add r10, 4
+    cmp r10, [r9]
+    ja .copy
+    shr ecx, 1                      ; 1-3 B jednym zapisem 4 B (zapis za
+    movzx r11d, byte [rsi + rdx - 1]    ; długością mieści się w pojemności);
+    movzx ecx, byte [rsi + rcx]     ; dwa osobne zapisy są tu 2× wolniejsze
+    movzx r10d, byte [rsi]
+    shl r11d, 16
+    shl ecx, 8
+    or r11d, r10d
+    or r11d, ecx
+    mov [rdi], r11d
+    ret
+.copy:
+    call rt_copy
+.ret:
+    ret
+.grow:
+    mov rcx, [r9]
+    add rcx, rcx
+    cmp rcx, r11
+    cmovb rcx, r11
+    mov r10, [r9]
+    add r10, 16                     ; duży blok bez dopisku z wnętrza siebie:
+    cmp r10, BIG_BLOCK              ; mremap zamiast kopii (jak realloc w C)
+    jb .move
+    mov r8, rax
+    sub r8, r9
+    cmp r8, r10
+    jb .move
+    push rdi
+    push rax
+    push rdx
+    lea rdx, [rcx + 16 + 4095]
+    and rdx, -4096
+    push rdx
+    mov rdi, r9
+    mov rsi, r10
+    mov r10d, MREMAP_MAYMOVE
+    mov eax, SYS_MREMAP
+    syscall
+    cmp rax, -4095
+    jae rt_nomem
+    pop rcx
+    sub rcx, 16
+    mov [rax], rcx
+    mov rcx, rax
+    pop rdx
+    pop rax
+    pop rdi
+    mov [rdi], rcx
+    jmp rt_append
+.move:
+    push rdi
+    push rax
+    push rdx
+    push r9
+    call rt_heap_alloc
+    pop r9
+    pop rdx
+    pop r8
+    pop rdi
+    mov [rdi], rax
+    mov rcx, [r9 + 8]
+    lea r11, [rcx + rdx]
+    mov [rax + 8], r11
+    lea rdi, [rax + 16]
+    lea rsi, [r9 + 16]
+    call rt_copy                       ; stara treść, potem dopisek (stary blok
+    mov rsi, r8                     ; zwalniany na końcu: dopisek może w nim leżeć)
+    mov rcx, rdx
+    call rt_copy
+    mov rdi, r9
+    jmp rt_heap_free
+
+; rt_streq(rax, rdx = A; rcx, r8 = B) -> rax = 1, gdy równe, inaczej 0
+rt_streq:
+    cmp rdx, r8
+    jne .no
+    mov rsi, rax
+    mov rdi, rcx
+    mov rcx, rdx
+.word:
+    cmp rcx, 8
+    jb .tail
+    mov r9, [rsi]
+    cmp r9, [rdi]
+    jne .no
+    add rsi, 8
+    add rdi, 8
+    sub rcx, 8
+    jmp .word
+.tail:
+    test rcx, rcx
+    jz .yes
+    mov r9b, [rsi]
+    cmp r9b, [rdi]
+    jne .no
+    inc rsi
+    inc rdi
+    dec rcx
+    jmp .tail
+.yes:
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
+
+; rt_len(rax, rdx) -> rax = liczba znaków (UTF-8: bajty, które nie są
+; kontynuacją 10xxxxxx)
+; po 8 bajtów: bajty kontynuacji to bit 7 = 1 i bit 6 = 0
+rt_len:
+    mov rsi, rax
+    mov rcx, rdx
+    mov rax, rdx                    ; wynik = bajty - bajty kontynuacji
+    cmp rcx, 64
+    jb .words
+    movdqu xmm1, [rt_cont_lim]
+    pxor xmm3, xmm3                 ; suma (dwa qword)
+    pxor xmm5, xmm5
+.block:                             ; po 16 B: bajt kontynuacji 0x80-0xbf to
+    mov rdi, rcx                    ; ze znakiem -128..-65, czyli < -64
+    shr rdi, 4
+    jz .sum_done
+    mov r9d, 255                    ; liczniki bajtowe najwyżej do 255
+    cmp rdi, r9
+    cmova rdi, r9
+    pxor xmm2, xmm2
+.vec:
+    movdqu xmm0, [rsi]
+    movdqa xmm4, xmm1
+    pcmpgtb xmm4, xmm0
+    psubb xmm2, xmm4
+    add rsi, 16
+    sub rcx, 16
+    dec rdi
+    jnz .vec
+    psadbw xmm2, xmm5
+    paddq xmm3, xmm2
+    jmp .block
+.sum_done:
+    movq r9, xmm3
+    sub rax, r9
+    punpckhqdq xmm3, xmm3
+    movq r9, xmm3
+    sub rax, r9
+.words:
+    mov r9, 0x8080808080808080
+    mov r10, 0x0101010101010101
+.word:
+    cmp rcx, 8
+    jb .tail
+    mov rdi, [rsi]
+    lea r11, [rdi + rdi]            ; bit 6 każdego bajtu na miejsce bitu 7
+    not r11
+    and r11, rdi
+    and r11, r9
+    shr r11, 7
+    imul r11, r10                   ; suma bajtów w najwyższym bajcie
+    shr r11, 56
+    sub rax, r11
+    add rsi, 8
+    sub rcx, 8
+    jmp .word
+.tail:
+    test rcx, rcx
+    jz .ret
+    movzx edi, byte [rsi]
+    and edi, 0xc0
+    cmp edi, 0x80
+    jne .next
+    dec rax
+.next:
+    inc rsi
+    dec rcx
+    jmp .tail
+.ret:
+    ret
+
+; rt_skip(rsi=pozycja, rdi=koniec, rcx=ile znaków) -> rsi za nimi,
+; rcx = ile się nie zmieściło; zmienia r11
+rt_skip:
+    test rcx, rcx
+    jz .ret
+    lea r11, [rsi + 8]              ; 8 bajtów ASCII (bit 7 = 0): 8 znaków naraz
+    cmp r11, rdi
+    ja .char
+    mov r11, 0x8080808080808080
+    and r11, [rsi]
+    jnz .char
+    cmp rcx, 8
+    jb .part
+    add rsi, 8
+    sub rcx, 8
+    jmp rt_skip
+.part:
+    add rsi, rcx
+    xor ecx, ecx
+    ret
+.char:
+    cmp rsi, rdi
+    jae .ret
+    inc rsi
+.cont:
+    cmp rsi, rdi
+    jae .next
+    movzx r11d, byte [rsi]
+    and r11d, 0xc0
+    cmp r11d, 0x80
+    jne .next
+    inc rsi
+    jmp .cont
+.next:
+    dec rcx
+    jnz rt_skip
+.ret:
+    ret
+
+; rt_index(rax, rdx = tekst, rcx = i) -> rax, rdx = znak nr i (od 0, ujemne
+; od końca); CF = 1, gdy poza tekstem
+rt_index:
+    test rcx, rcx
+    jns .pos
+    push rax
+    push rdx
+    push rcx
+    call rt_len
+    pop rcx
+    pop rdx
+    add rcx, rax
+    pop rax
+    test rcx, rcx
+    js .bad
+.pos:
+    mov rsi, rax
+    lea rdi, [rax + rdx]
+    call rt_skip
+    test rcx, rcx
+    jnz .bad
+    cmp rsi, rdi
+    jae .bad
+    mov rax, rsi
+    mov ecx, 1
+    call rt_skip
+    mov rdx, rsi
+    sub rdx, rax
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+; rt_slice(rax, rdx = tekst, rcx = od, r8 = do) -> rax, rdx = znaki [od, do)
+; jak w Pythonie: ujemne od końca, poza zakresem przycinane
+rt_slice:
+    mov r9, rcx
+    or r9, r8
+    jns .forward                    ; od, do >= 0: bez liczenia całego tekstu
+    push rax
+    push rdx
+    push rcx
+    push r8
+    call rt_len
+    pop r8
+    pop rcx
+    pop rdx
+    pop rsi
+    mov r9, rcx
+    test r9, r9
+    jns .a1
+    add r9, rax
+    jns .a1
+    xor r9d, r9d
+.a1:
+    cmp r9, rax
+    jbe .a2
+    mov r9, rax
+.a2:
+    mov r10, r8
+    test r10, r10
+    jns .b1
+    add r10, rax
+    jns .b1
+    xor r10d, r10d
+.b1:
+    cmp r10, rax
+    jbe .b2
+    mov r10, rax
+.b2:
+    cmp r10, r9
+    jae .b3
+    mov r10, r9
+.b3:
+    lea rdi, [rsi + rdx]
+    mov rcx, r9
+    call rt_skip
+    jmp .rest
+.forward:
+    ; przycinanie wynika z rt_skip (zatrzymuje się na końcu tekstu)
+    mov rsi, rax
+    lea rdi, [rax + rdx]
+    mov r9, rcx
+    mov r10, r8
+    cmp r10, r9
+    jae .f_skip
+    mov r10, r9
+.f_skip:
+    call rt_skip
+.rest:
+    mov rax, rsi
+    mov rcx, r10
+    sub rcx, r9
+    call rt_skip
+    mov rdx, rsi
+    sub rdx, rax
+    ret
+
+; rt_inputtext -> rax, rdx = linia wejścia (bez '\n' i końcowego '\r');
+; inputok() = 1, gdy przeczytano linię; po końcu wejścia pusty tekst
+rt_inputtext:
+    call rt_readline
+    test eax, eax
+    jnz .eof
+    mov qword [r15 + D_INOK], 0
+    cmp rdx, -1
+    je .empty                       ; linia od 64 KB: jak zły wpis
+    test rdx, rdx
+    jz .ok
+    cmp byte [rsi + rdx - 1], 13
+    jne .ok
+    dec rdx
+.ok:
+    mov qword [r15 + D_INOK], 1
+    mov rcx, rdx
+    call rt_tmp_alloc
+    mov rdi, rax
+    mov rcx, rdx
+    call rt_copy
+    ret
+.eof:
+    call rt_in_eof
+.empty:
+    lea rax, [rt_begin]
+    xor edx, edx
+    ret
+
+; rt_nl — wypisuje '\n'
+rt_nl:
+    lea rsi, [rt_msg_nl]
+    mov edx, 1
+    jmp rt_write
 
 ; rt_sandbox — blokady jądra według importów (opis uprawnień: drugie pole
 ; nagłówka obrazu, format w imp.asm). Wołane na początku programu.
@@ -730,6 +1558,10 @@ rt_msg_ovf:     db "przepełnienie: wynik poza zakresem liczb 64-bitowych"
 rt_msg_ovf_len  equ $ - rt_msg_ovf
 rt_msg_div0:    db "dzielenie przez zero"
 rt_msg_div0_len equ $ - rt_msg_div0
+rt_msg_index:   db "indeks poza tekstem"
+rt_msg_index_len equ $ - rt_msg_index
+rt_msg_nomem:   db "fih: błąd: brak pamięci", 10
+rt_msg_nomem_len equ $ - rt_msg_nomem
 rt_msg_var1:    db "zmienna '"
 rt_msg_var1_len equ $ - rt_msg_var1
 rt_msg_var2:    db "' nie ma jeszcze wartości"
@@ -737,6 +1569,19 @@ rt_msg_var2_len equ $ - rt_msg_var2
 rt_msg_wfail:   db "fih: błąd: nie można zapisać wyjścia", 10
 rt_msg_wfail_len equ $ - rt_msg_wfail
 rt_msg_nl:      db 10
+align 16
+rt_cont_lim: times 16 db -64
+rt_pow10:                           ; 10^0 .. 10^19
+    dq 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000
+    dq 1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000
+    dq 100000000000000, 1000000000000000, 10000000000000000
+    dq 100000000000000000, 1000000000000000000, 0x8ac7230489e80000
+rt_digits2:
+%assign i 0
+%rep 100
+    db '0' + i / 10, '0' + i % 10
+%assign i i + 1
+%endrep
 align 8
 rt_end:
 
@@ -753,3 +1598,15 @@ rt_table:
     dd rt_input - rt_begin      ; RT_INPUT
     dd rt_inputchar - rt_begin  ; RT_INPUTCHAR
     dd rt_sandbox - rt_begin    ; RT_SANDBOX
+    dd rt_tmp_reset - rt_begin  ; RT_TMPRESET
+    dd rt_cat - rt_begin        ; RT_CAT
+    dd rt_int2text - rt_begin   ; RT_INT2TEXT
+    dd rt_set_text - rt_begin   ; RT_SETTEXT
+    dd rt_append - rt_begin     ; RT_APPEND
+    dd rt_streq - rt_begin      ; RT_STREQ
+    dd rt_len - rt_begin        ; RT_LEN
+    dd rt_index - rt_begin      ; RT_INDEX
+    dd rt_slice - rt_begin      ; RT_SLICE
+    dd rt_inputtext - rt_begin  ; RT_INPUTTEXT
+    dd rt_nl - rt_begin         ; RT_NL
+    dd rt_cat_int - rt_begin    ; RT_CATINT

@@ -21,6 +21,7 @@ test: fih
 fuzz: fih
 	python3 tests/fuzz/fuzz2.py 5000
 	python3 tests/fuzz/fuzz.py 5000
+	python3 tests/fuzz/text_fuzz.py 3000
 	python3 tests/fuzz/par_fuzz.py 10
 	./tests/truncate.sh
 	python3 tests/fuzz/gcc_oracle.py 20000

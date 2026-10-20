@@ -22,7 +22,6 @@ def max_paren_depth(stack_limit=8 << 20):
 MSG = {
     "char": "nieoczekiwany znak na początku instrukcji",
     "lparen": "oczekiwano '(' po nazwie instrukcji",
-    "string": "oczekiwano napisu w cudzysłowie",
     "unterminated": "niezamknięty napis",
     "rparen": "oczekiwano ')' po napisie",
     "rparen_expr": "oczekiwano ')' po wyrażeniu",
@@ -143,6 +142,8 @@ class Parser:
             if c == 43: self.p += 1; continue
             break
         e = self.primary(depth)
+        self.ws()
+        if self.p < self.bound and self.src[self.p] == 91: raise Unsupported("indeks")  # [
         return ("neg", e) if neg else e
 
     def primary(self, depth):
@@ -156,6 +157,7 @@ class Parser:
             if self.p >= self.bound or self.src[self.p] != 41: self.err("e_rparen")
             self.p += 1
             return e
+        if c == 34: raise Unsupported("tekst")        # napis w wyrażeniu (0.4)
         if 48 <= c <= 57:
             v = 0
             while self.p < self.bound and 48 <= self.src[self.p] <= 57:
@@ -187,6 +189,10 @@ class Parser:
                 if self.p >= self.bound or self.src[self.p] != 41: self.err("func")
                 self.p += 1
                 return ("call", name)
+            if name in (b"len", b"inputtext"):
+                q = self.p + len(name)
+                while q < self.bound and self.src[q] in b" \t": q += 1
+                if q < self.bound and self.src[q] == 40: raise Unsupported("funkcja tekstowa")
             if name in (b"and", b"or", b"not", b"write"): self.err("e_unexpected")
             if name not in self.assigned: self.err("unknown_var", name)
             self.p += len(name)
@@ -317,17 +323,21 @@ class Parser:
             if not self.at(40): self.err("lparen")
             self.q += 1
             self.blank()
-            if name == b"write" and self.at(34):
+            if name != b"calc" and self.at(34):
+                # print/write("napis"); napis z operatorem dalej to wyrażenie tekstowe (0.4)
                 self.q += 1
                 s0, s1 = self.string()
                 self.blank()
-                if not self.at(41): self.err("rparen")
+                if not self.at(41):
+                    self.p, self.bound = self.q, self.eol
+                    if self.at(91) or self.binop() is not None: raise Unsupported("tekst")
+                    self.err("rparen")
                 self.q += 1
                 self.end_check()
-                out.append(("print", line, self.unescape(self.src[s0:s1])[:-1]))
+                text = self.unescape(self.src[s0:s1])
+                out.append(("print", line, text if name == b"print" else text[:-1]))
                 return
-            if name == b"print" or self.at(34):
-                if not self.at(34): self.err("string")
+            if self.at(34):
                 self.q += 1
                 s0, s1 = self.string()
                 self.blank()
@@ -346,7 +356,7 @@ class Parser:
             if not self.at(41): self.err("rparen_expr")
             self.q += 1
             self.end_check()
-            out.append(("calc" if name == b"calc" else "write", line, e))
+            out.append(("write" if name == b"write" else "calc", line, e))
             return
         if name in (b"if", b"while"):
             cond = self.bare_expr()
@@ -405,6 +415,7 @@ class Parser:
 class Break(Exception): pass
 class Continue(Exception): pass
 class Steps(Exception): pass
+class Unsupported(Steps): pass      # konstrukcja 0.4 (teksty), której wyrocznia nie liczy
 
 
 def chk(v, line):

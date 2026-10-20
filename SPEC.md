@@ -68,7 +68,7 @@ linia       = [ odstęp ] [ instrukcja [ odstęp ] ] [ komentarz ] [ "\r" ] "\n"
 instrukcja  = print | write | calc | przypisanie | if | while | koniec_bloku
             | "break" | "continue" | import ;      (* import: punkt 8 *)
 
-print       = "print" [ odstęp ] "(" [ odstęp ] napis [ odstęp ] ")" ;
+print       = "print" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 write       = "write" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 calc        = "calc" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 przypisanie = nazwa [ odstęp ] ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) wyrażenie ;
@@ -90,8 +90,11 @@ porównanie  = suma { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) suma } ;
 suma        = iloczyn { ( "+" | "-" ) iloczyn } ;
 iloczyn     = unarny { ( "*" | "/" | "%" ) unarny } ;
 unarny      = ( "-" | "+" ) unarny | prosty ;
-prosty      = liczba | znak_lit | nazwa | funkcja | "(" wyrażenie ")" ;
-funkcja     = ( "input" | "inputchar" | "inputok" | "eof" ) [ odstęp ] "(" [ odstęp ] ")" ;
+prosty      = atom { indeks } ;                     (* indeks: tylko tekst, 0.4 *)
+atom        = liczba | znak_lit | napis | nazwa | funkcja | "(" wyrażenie ")" ;
+indeks      = "[" wyrażenie "]" | "[" [ wyrażenie ] ":" [ wyrażenie ] "]" ;
+funkcja     = ( "input" | "inputchar" | "inputok" | "eof" | "inputtext" ) [ odstęp ] "(" [ odstęp ] ")"
+            | "len" [ odstęp ] "(" wyrażenie ")" ;
 znak_lit    = "'" ( drukowalny | "\n" | "\t" | "\\" | "\'" ) "'" ;  (* kod znaku *)
 drukowalny  = bajt 32..126 oprócz "'" ;
 liczba      = cyfra { cyfra } ;                     (* tylko dziesiętne *)
@@ -105,11 +108,13 @@ Wyrażenie bez cudzysłowu kończy się na `#` (komentarz) albo na końcu linii;
 
 ## 5. Instrukcje
 
-### `print("napis")`
+### `print("napis")` i `print(wyrażenie)`
 
 Wypisuje napis i znak nowej linii. Napis jest wypisywany dosłownie: nic nie
 jest liczone ani podstawiane (`print("2 + 3")` wypisuje `2 + 3`, `print("x")`
-wypisuje `x`, nie wartość zmiennej).
+wypisuje `x`, nie wartość zmiennej). Od 0.4 `print` przyjmuje też dowolne
+wyrażenie, liczbowe albo tekstowe: `print(2 + 3)` wypisuje `5`,
+`print(imie + "!")` wypisuje tekst ze zmiennej (punkt „Teksty”).
 
 | zapis | znaczenie |
 |-------|-----------|
@@ -119,7 +124,7 @@ wypisuje `x`, nie wartość zmiennej).
 | `\"`  | cudzysłów |
 
 Każda inna sekwencja (np. `\q`) to błąd. Surowy tabulator w napisie jest dozwolony.
-`print("")` wypisuje pustą linię. `print` nie przyjmuje wyrażeń: `print(2)` to błąd.
+`print("")` wypisuje pustą linię.
 
 ### `write("napis")` i `write(wyrażenie)`
 
@@ -139,6 +144,8 @@ jednym wyrażeniem.
 ```
 x = 2 + 3      # nowa zmienna albo nowa wartość
 x += 1         # x = x + 1; podobnie -= *= /= %=
+t = "Ala"      # zmienna tekstowa (0.4)
+t += " ma kota"   # dopisanie na końcu
 ```
 
 - `x op= e` liczy najpierw `x`, potem `e`, potem `x op e` — z tymi samymi
@@ -277,6 +284,40 @@ Przykłady:
 | `not 0 or 0 and 1` | 1 |
 | `-(1 < 2)` | -1 |
 
+### Teksty (0.4, w budowie)
+
+Wyrażenie może mieć wartość tekstową (UTF-8). Tekst powstaje z napisu
+w cudzysłowie, ze zmiennej tekstowej, z `inputtext()` albo z działań poniżej.
+
+| zapis | wynik |
+|---|---|
+| `"Ala" + " ma kota"` | łączenie: `Ala ma kota` |
+| `"Wynik: " + 5`, `5 + "zł"` | liczba po jednej stronie `+` zamienia się na tekst: `Wynik: 5`, `5zł` |
+| `1 + 2 + "a"` | od lewej: `(1 + 2) + "a"` = `3a`; `"a" + 1 + 2` = `a12` |
+| `t == "abc"`, `t != "abc"` | 1 albo 0 (porównanie bajt po bajcie) |
+| `len(t)` | liczba znaków (nie bajtów): `len("żółw")` = 4 |
+| `t[i]` | znak nr `i` jako tekst, od 0; ujemny liczy od końca: `t[-1]` to ostatni |
+| `t[a:b]` | znaki od `a` do `b` (bez `b`); `a`, `b` można pominąć: `t[:3]`, `t[2:]` |
+| `inputtext()` | czyta linię z wejścia jako tekst |
+
+- Znaki to znaki UTF-8 (`"🐟"[0]` = `🐟`), a nie bajty.
+- Wycinek działa jak w Pythonie: ujemne granice liczą się od końca, granice
+  poza tekstem są przycinane (`"abc"[1:100]` = `bc`, `"abc"[5:]` = pusty).
+- Indeks poza tekstem (`"abc"[3]`, `""[0]`) kończy program błędem
+  `indeks poza tekstem`.
+- Z tekstem można tylko łączyć (`+`, `+=`) i porównywać (`==`, `!=`).
+  Inne działania (`"a" * 2`, `t < "b"`, `t -= 1`) i porównanie tekstu
+  z liczbą (`"1" == 1`) to błąd przed uruchomieniem. Porównań tekstów nie
+  można łączyć w łańcuch (`a == b == c`) — trzeba napisać `a == b and b == c`.
+- Warunek `if`/`while`, `calc` i argumenty działań liczbowych muszą być
+  liczbami: `if t {` to błąd `tu potrzebna jest liczba, nie tekst`.
+- `inputtext()` czyta całą linię dosłownie: zostawia spacje, usuwa tylko
+  końcowe `\n` i `\r`. Po końcu wejścia zwraca pusty tekst i `eof()` = 1.
+  `inputok()` = 1, gdy linia została przeczytana. Linia od 64 KB jest
+  pomijana jak zły wpis (pusty tekst, `inputok()` = 0).
+- `len` i `inputtext` nie są słowami zarezerwowanymi: są funkcjami tylko
+  wtedy, gdy stoi po nich `(`.
+
 ## 7. Zmienne
 
 - Nazwa: litery ASCII, cyfry i `_`, nie zaczyna się od cyfry. Wielkość liter
@@ -292,6 +333,10 @@ Przykłady:
   - gdy przypisanie jest wcześniej w tekście, ale się nie wykonało (np. było
     w pominiętej gałęzi `if`), program kończy się w trakcie:
     `zmienna 'x' nie ma jeszcze wartości`.
+- Zmienna jest liczbą albo tekstem (0.4). Rodzaj ustala pierwsze przypisanie
+  w tekście programu i nie może się zmienić: `x = 5`, a dalej `x = "a"` to
+  błąd `zmienna 'x' jest liczbą, nie tekstem` (i odwrotnie
+  `zmienna 't' jest tekstem, nie liczbą`).
 - Najwyżej 65 536 różnych zmiennych.
 
 ## 8. Importy i uprawnienia (0.4, w budowie)
@@ -378,7 +423,6 @@ Zgłaszany jest pierwszy błąd w pliku.
 | `nieoczekiwany znak na początku instrukcji` | `5print("a")`, `and = 1` |
 | `nieznana instrukcja (znane: print, calc)` | `pisz("x")`, `Print("x")` |
 | `oczekiwano '(' po nazwie instrukcji` | `print "x"`, `print = 5` |
-| `oczekiwano napisu w cudzysłowie` | `print(2)` |
 | `oczekiwano ')' po napisie` | `print("abc"` |
 | `oczekiwano ')' po wyrażeniu` | `calc(1 + 2` |
 | `niezamknięty napis` | `print("abc)` |
@@ -400,6 +444,16 @@ Zgłaszany jest pierwszy błąd w pliku.
 | `zły zapis znaku (przykład: '+')` | `'ab'`, `'ł'`, `'a` |
 | `za dużo zmiennych (max 65536)` | 65 537. nowa zmienna |
 | `bloki zbyt głęboko zagnieżdżone (max 65536)` | 65 537 bloków jeden w drugim |
+| `tu potrzebna jest liczba, nie tekst` | `calc(t)`, `if t {`, `x = -t` dla tekstu `t` |
+| `tekst można tylko łączyć (+) i porównywać (== !=)` | `"a" * 2`, `t -= 1` |
+| `nie można porównać tekstu z liczbą` | `"1" == 1` |
+| `porównań tekstów nie można łączyć w łańcuch (użyj and)` | `"a" == "a" == "a"` |
+| `len przyjmuje tekst` | `len(5)` |
+| `indeks [ ] działa tylko na tekście` | `x[0]` dla liczby `x` |
+| `indeks musi być liczbą` | `"abc"["x"]` |
+| `brak ']' po indeksie` | `"abc"[1` |
+| `zmienna 'x' jest liczbą, nie tekstem` | `x = 5`, potem `x = "a"` |
+| `zmienna 't' jest tekstem, nie liczbą` | `t = "a"`, potem `t = 5` |
 | `nieznany moduł 'x' (znane: math, files, commands, net)` | `import foo` |
 | `oczekiwano nazwy modułu po import (znane: math, files, commands, net)` | `import` |
 | `import musi być na początku pliku, przed innymi instrukcjami` | `x = 1`, potem `import math` |
@@ -423,6 +477,7 @@ wyjściem, komunikatem i kodem co `fih program.fh`.
 | `dzielenie przez zero` | `calc(1 / 0)`, `x %= 0` |
 | `przepełnienie: wynik poza zakresem liczb 64-bitowych` | `calc(9223372036854775807 + 1)` |
 | `zmienna 'x' nie ma jeszcze wartości` | `if 0 {` … `x = 1` … `}`, potem `calc(x)` |
+| `indeks poza tekstem` | `t = "abc"`, potem `print(t[3])` |
 
 ### Błędy bez numeru linii
 
@@ -484,9 +539,14 @@ cudzysłowie, a z wejścia można czytać tylko liczby i pojedyncze znaki),
 funkcji definiowanych przez użytkownika, tablic, operacji na napisach,
 argumentów wiersza poleceń, importu innych plików, komentarzy blokowych,
 pętli `for`.
+Wersja 0.4 (w budowie) dodaje teksty w zmiennych i proste operacje na nich
+(punkt 6, „Teksty”).
 Plan dalszych wersji: [ROADMAP.md](ROADMAP.md).
 
 ## 13. Zmiany wobec wcześniejszych wersji
+
+0.4 (w budowie): `print` przyjmuje wyrażenia, więc `print(2)` nie jest już
+błędem. Zmienna nie może zmienić rodzaju (liczba/tekst).
 
 0.3: nowe słowa zarezerwowane (`write`, `input`, `inputchar`, `inputok`,
 `eof`) — program 0.2 ze zmienną o takiej nazwie trzeba poprawić. Poza tym

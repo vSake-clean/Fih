@@ -29,7 +29,7 @@ done
 # build się udaje, a skompilowany program kończy się tym samym błędem;
 # wyjście przed błędem: X.out (gdy brak — puste). Każdy inny błąd jest
 # wykrywany przed uruchomieniem: nic nie jest wypisane, build nie tworzy pliku.
-runtime_re=': (dzielenie przez zero|przepełnienie: wynik poza zakresem liczb 64-bitowych|zmienna .* nie ma jeszcze wartości)$'
+runtime_re=': (dzielenie przez zero|indeks poza tekstem|przepełnienie: wynik poza zakresem liczb 64-bitowych|zmienna .* nie ma jeszcze wartości)$'
 for f in tests/err/*.fh; do
     exp=$(cat "${f%.fh}.err")
     expout=""; [[ -f "${f%.fh}.out" ]] && expout=$(cat "${f%.fh}.out")
