@@ -1,0 +1,3 @@
+import math only sqrt, floor
+print(math.floor(2.5))
+print(math.cos(0))

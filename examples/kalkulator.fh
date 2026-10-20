@@ -60,7 +60,7 @@ while 1 {
             w = a - b
         }
     } else if op == '*' {
-        if a > 0 and b > 0 and a > MAX / b or a > 0 and b < 0 and b < MIN / a or a < 0 and b > 0 and a < MIN / b or a < 0 and b < 0 and b < MAX / a {
+        if a > 0 and b > 0 and a > MAX // b or a > 0 and b < 0 and b < MIN // a or a < 0 and b > 0 and a < MIN // b or a < 0 and b < 0 and b < MAX // a {
             zakres = 0
         } else {
             w = a * b
@@ -71,7 +71,7 @@ while 1 {
         } else if a == MIN and b == -1 {
             zakres = 0
         } else {
-            w = a / b
+            w = a // b
         }
     } else {
         if b == 0 {

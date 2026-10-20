@@ -15,7 +15,7 @@
 %include "fih.inc"
 default rel
 
-global imp_statement, imp_policy, imp_need_base, imp_mods, imp_funcs
+global imp_statement, imp_policy, imp_need_base, imp_mods, imp_funcs, imp_reset, imp_math
 extern blank, skip_ident, end_check, const_need, const_buf, buf_need, ident_tab, die, die_name
 
 %define M_MATH     0
@@ -48,9 +48,11 @@ extern blank, skip_ident, end_check, const_need, const_buf, buf_need, ident_tab,
 
 section .rodata
 mod_tab:    db 4, "math", 5, "files", 8, "commands", 3, "net", 0
+; (kolejność = numery w comp_flt.inc, math_desc)
 math_fn:    db 3, "abs", 3, "min", 3, "max", 3, "pow", 4, "sqrt", 5, "floor"
-            db 4, "ceil", 5, "round", 3, "sin", 3, "cos", 3, "tan", 3, "log"
-            db 3, "exp", 6, "random", 0
+            db 4, "ceil", 5, "round", 5, "trunc", 3, "sin", 3, "cos", 3, "tan"
+            db 4, "asin", 4, "acos", 4, "atan", 5, "atan2", 3, "log", 4, "log2"
+            db 5, "log10", 3, "exp", 5, "hypot", 6, "random", 2, "pi", 1, "e", 0
 files_fn:   db 4, "read", 5, "write", 6, "append", 6, "exists", 6, "delete"
             db 6, "rename", 5, "mkdir", 4, "list", 0
 net_fn:     db 3, "get", 4, "post", 8, "download", 3, "tcp", 0
@@ -74,7 +76,7 @@ msg_mod2:   db "' (znane: math, files, commands, net)"
 msg_mod2_len equ $ - msg_mod2
 msg_fn1:    db "nieznana funkcja '"
 msg_fn1_len equ $ - msg_fn1
-msg_fn_math: db "' w module math (znane: abs, min, max, pow, sqrt, floor, ceil, round, sin, cos, tan, log, exp, random)"
+msg_fn_math: db "' w module math (znane: abs, min, max, pow, sqrt, floor, ceil, round, trunc, sin, cos, tan, asin, acos, atan, atan2, log, log2, log10, exp, hypot, random, pi, e)"
 msg_fn_math_len equ $ - msg_fn_math
 msg_fn_files: db "' w module files (znane: read, write, append, exists, delete, rename, mkdir, list)"
 msg_fn_files_len equ $ - msg_fn_files
@@ -270,6 +272,37 @@ add_pair:
     call buf_need
     mov [rax], rbx
     mov [rax + 8], rdx
+    ret
+
+; imp_math(rsi = nazwa, rdx = długość) -> eax = numer funkcji math (-1: nie ma),
+; ecx = 1, gdy dozwolona (import math bez only albo jest na liście only)
+imp_math:
+    lea rdi, [math_fn]
+    call tab_find
+    xor ecx, ecx
+    test eax, eax
+    js .ret
+    bt dword [imp_funcs + M_MATH*4], eax
+    setc cl
+.ret:
+    ret
+
+; imp_reset — stan sprzed pierwszego importu (kolejny przebieg kompilacji)
+imp_reset:
+    xor eax, eax
+    mov [imp_mods], rax
+    mov [imp_need_base], rax
+    mov [imp_funcs], rax
+    mov [imp_funcs + 8], rax
+    mov [rule_buf + 8], rax
+    mov [cmd_buf + 8], rax
+    mov [dom_buf + 8], rax
+    mov [cmd_all], rax
+    mov [dom_all], rax
+    mov [place_ptr], rax
+    mov [place_len], rax
+    mov [cur_mask], rax
+    mov [have_dom], rax
     ret
 
 ; imp_statement — linia "import ..." (kursor za słowem import; za nim spacja

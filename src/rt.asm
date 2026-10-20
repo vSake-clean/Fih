@@ -14,7 +14,8 @@
 %include "fih.inc"
 default rel
 
-global rt_begin, rt_end, rt_table
+global rt_begin, rt_end, rt_table, rt_flt_fmt, rt_numcmp, rt_darith, rt_idiv_flt, rt_fmod, rt_fidiv
+global parse_float, rt_math1, rt_math2
 
 section .rt progbits alloc exec nowrite align=16
 
@@ -359,25 +360,19 @@ rt_exit:
     syscall
 
 ; rt_die(edi=linia, esi=rodzaj: 0 przepełnienie, 1 dzielenie przez zero,
-; 2 indeks poza tekstem)
+; 2 indeks poza tekstem, 3 potrzebna liczba całkowita, 4 argument spoza
+; dziedziny funkcji math, 5 wynik za duży)
 rt_die:
     push rdi
     push rsi
     call rt_flush
     call rt_err_prefix
     pop rsi
-    lea rax, [rt_msg_ovf]
-    mov edx, rt_msg_ovf_len
-    lea rcx, [rt_msg_div0]
-    mov r8d, rt_msg_div0_len
-    cmp esi, 1
-    cmove rax, rcx
-    cmove edx, r8d
-    lea rcx, [rt_msg_index]
-    mov r8d, rt_msg_index_len
-    cmp esi, 2
-    cmove rax, rcx
-    cmove edx, r8d
+    lea rcx, [rt_msg_tab]           ; dd przesunięcie od rt_begin, dd długość
+    mov edx, [rcx + rsi*8 + 4]
+    mov eax, [rcx + rsi*8]
+    lea rcx, [rt_begin]
+    add rax, rcx
     mov rsi, rax
     mov edi, STDERR
     call rt_write_or_die
@@ -441,6 +436,11 @@ rt_err_end:
     mov edx, 1
     call rt_write_or_die
     jmp rt_exit1
+
+; ===================== ułamki =====================
+%include "rt_flt.inc"
+%include "rt_dec.inc"
+%include "rt_math.inc"
 
 ; ===================== teksty =====================
 ; Tekst w rejestrach: adres i długość w bajtach (UTF-8). Zmienna tekstowa
@@ -1560,6 +1560,20 @@ rt_msg_div0:    db "dzielenie przez zero"
 rt_msg_div0_len equ $ - rt_msg_div0
 rt_msg_index:   db "indeks poza tekstem"
 rt_msg_index_len equ $ - rt_msg_index
+rt_msg_int:     db "tu potrzebna jest liczba całkowita"
+rt_msg_int_len  equ $ - rt_msg_int
+rt_msg_dom:     db "argument spoza dziedziny funkcji matematycznej"
+rt_msg_dom_len  equ $ - rt_msg_dom
+rt_msg_rng:     db "wynik za duży, by zapisać go jako ułamek"
+rt_msg_rng_len  equ $ - rt_msg_rng
+; komunikaty rt_die według rodzaju (esi)
+rt_msg_tab:
+    dd rt_msg_ovf - rt_begin, rt_msg_ovf_len
+    dd rt_msg_div0 - rt_begin, rt_msg_div0_len
+    dd rt_msg_index - rt_begin, rt_msg_index_len
+    dd rt_msg_int - rt_begin, rt_msg_int_len
+    dd rt_msg_dom - rt_begin, rt_msg_dom_len
+    dd rt_msg_rng - rt_begin, rt_msg_rng_len
 rt_msg_nomem:   db "fih: błąd: brak pamięci", 10
 rt_msg_nomem_len equ $ - rt_msg_nomem
 rt_msg_var1:    db "zmienna '"
@@ -1583,6 +1597,8 @@ rt_digits2:
 %assign i i + 1
 %endrep
 align 8
+%include "flt_tab.inc"
+%include "trig_tab.inc"
 rt_end:
 
 section .rodata
@@ -1610,3 +1626,17 @@ rt_table:
     dd rt_inputtext - rt_begin  ; RT_INPUTTEXT
     dd rt_nl - rt_begin         ; RT_NL
     dd rt_cat_int - rt_begin    ; RT_CATINT
+    dd rt_flt_out - rt_begin    ; RT_FLT_OUT
+    dd rt_flt_out_nl - rt_begin ; RT_FLT_OUT_NL
+    dd rt_num_out - rt_begin    ; RT_NUM_OUT
+    dd rt_num_out_nl - rt_begin ; RT_NUM_OUT_NL
+    dd rt_flt2text - rt_begin   ; RT_FLT2TEXT
+    dd rt_num2text - rt_begin   ; RT_NUM2TEXT
+    dd rt_numcmp - rt_begin     ; RT_NUMCMP
+    dd rt_darith - rt_begin     ; RT_DARITH
+    dd rt_idiv_flt - rt_begin   ; RT_IDIVF
+    dd rt_fmod - rt_begin       ; RT_FMOD
+    dd rt_fidiv - rt_begin      ; RT_FIDIV
+    dd rt_math1 - rt_begin      ; RT_MATH1
+    dd rt_math2 - rt_begin      ; RT_MATH2
+    dd rt_random - rt_begin     ; RT_RANDOM

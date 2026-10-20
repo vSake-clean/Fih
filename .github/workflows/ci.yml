@@ -18,6 +18,7 @@ jobs:
           python3 tests/fuzz/fuzz2.py 1000
           python3 tests/fuzz/fuzz.py 1000
           python3 tests/fuzz/text_fuzz.py 500
+          python3 tests/fuzz/flt_fuzz.py 500
           python3 tests/fuzz/par_fuzz.py 3
           ./tests/truncate.sh
           python3 tests/fuzz/gcc_oracle.py 2000

@@ -1,0 +1,43 @@
+import math
+print(math.sqrt(2))
+print(math.pi)
+print(math.e)
+x = 2.5
+print(math.floor(x))
+print(math.ceil(x))
+print(math.round(x))
+print(math.round(3.5))
+print(math.round(2.675, 2))
+print(math.round(1250, -2))
+print(math.trunc(-2.7))
+print(math.abs(-3))
+print(math.abs(-x))
+print(math.min(3, 1.5, 2))
+print(math.max(3, 1.5, 2))
+print(math.min(3, 4))
+print(math.pow(2, 10))
+print(math.pow(2, -1))
+print(math.pow(x, 2))
+print(math.sin(math.pi / 6))
+print(math.cos(0))
+print(math.atan2(1, 1))
+print(math.log(math.e))
+print(math.log(8, 2))
+print(math.log2(1024))
+print(math.log10(1000))
+print(math.exp(1))
+print(math.hypot(3, 4))
+n = 0
+s = 0.0
+while n < 10 {
+  s = s + math.sqrt(n)
+  n += 1
+}
+print(s)
+r = math.random()
+print(r >= 0 and r < 1)
+k = math.random(1, 6)
+print(k >= 1 and k <= 6)
+y = math.floor(x) * 2
+print(y)
+print("pi=" + math.pi)

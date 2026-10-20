@@ -11,6 +11,9 @@ fih: $(OBJ)
 build/%.o: src/%.asm src/fih.inc | build
 	$(NASM) $(NASMFLAGS) -o $@ $<
 
+build/rt.o: src/rt_flt.inc src/flt_tab.inc src/rt_dec.inc src/rt_math.inc src/trig_tab.inc
+build/comp.o: src/comp_flt.inc
+
 build:
 	mkdir -p build
 
@@ -22,6 +25,7 @@ fuzz: fih
 	python3 tests/fuzz/fuzz2.py 5000
 	python3 tests/fuzz/fuzz.py 5000
 	python3 tests/fuzz/text_fuzz.py 3000
+	python3 tests/fuzz/flt_fuzz.py 3000
 	python3 tests/fuzz/par_fuzz.py 10
 	./tests/truncate.sh
 	python3 tests/fuzz/gcc_oracle.py 20000

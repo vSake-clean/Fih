@@ -1,23 +1,33 @@
 test,lang,value,unit,ms
-exec,Fih,11655381.2,linii/s,8.580
-exec,Fih (build),289917542.0,linii/s,0.345
-exec,C,8062467.7,linii/s,12.403
-exec,C++,6755127.7,linii/s,14.804
-exec,Python,43456.7,linii/s,2301.140
-source,Fih,11655381.2,linii/s,8.580
-source,Fih (build),8039053.7,linii/s,12.439
-source,C,2918.9,linii/s,34259.326
-source,C++,976.7,linii/s,102390.695
-source,Python,43456.7,linii/s,2301.140
-startup,Fih,2626.6,uruchomień/s,0.381
-startup,Fih (build),3107.3,uruchomień/s,0.322
-startup,C,1059.4,uruchomień/s,0.944
-startup,C++,449.1,uruchomień/s,2.227
-startup,Python,39.8,uruchomień/s,25.133
-loops,Fih,2532218.5,liczb/s,118.472
-loops,Fih (build),2533924.4,liczb/s,118.393
-loops,C,1361913.0,liczb/s,220.277
-loops,C++,1368012.8,liczb/s,219.295
-loops,Python,59236.3,liczb/s,5064.429
-exec1,Fih,7932211.4,linii/s,12.607
-exec1,C,7523257.9,linii/s,13.292
+exec,Fih,13338765.3,linii/s,7.497
+exec,Fih (build),367227052.2,linii/s,0.272
+exec,C,8320381.9,linii/s,12.019
+exec,C++,6940603.3,linii/s,14.408
+exec,Python,41769.7,linii/s,2394.080
+source,Fih,13338765.3,linii/s,7.497
+source,Fih (build),8974245.0,linii/s,11.143
+source,C,2918.9,linii/s,34258.942
+source,C++,976.7,linii/s,102390.299
+source,Python,41769.7,linii/s,2394.080
+startup,Fih,3099.3,uruchomień/s,0.323
+startup,Fih (build),3720.8,uruchomień/s,0.269
+startup,C,1198.5,uruchomień/s,0.834
+startup,C++,494.7,uruchomień/s,2.021
+startup,Python,40.4,uruchomień/s,24.752
+loops,Fih,2531126.4,liczb/s,118.524
+loops,Fih (build),2545762.6,liczb/s,117.842
+loops,C,1380725.5,liczb/s,217.276
+loops,C++,1374225.4,liczb/s,218.303
+loops,Python,59810.5,liczb/s,5015.812
+floats,Fih,3133285.0,punktów/s,76.597
+floats,Fih (build),3205573.3,punktów/s,74.870
+floats,C,7843687.4,punktów/s,30.598
+floats,C++,7602657.8,punktów/s,31.568
+floats,Python,57890.2,punktów/s,4145.779
+math,Fih,58369441.5,pierwiastków/s,51.397
+math,Fih (build),60571009.0,pierwiastków/s,49.529
+math,C,112968393.4,pierwiastków/s,26.556
+math,C++,123376839.4,pierwiastków/s,24.316
+math,Python,2555072.7,pierwiastków/s,1174.135
+exec1,Fih,8005913.6,linii/s,12.491
+exec1,C,7730963.6,linii/s,12.935

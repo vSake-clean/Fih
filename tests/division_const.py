@@ -19,7 +19,7 @@ for n in ns:
     lines.append("y = x - 1")       # y = n - 1 (też INT64_MIN dla n = -I64)
     for d in ds:
         for c in (f"{d}", f"-{d}"):
-            lines += [f"calc(x / {c})", f"calc(x % {c})", f"calc(y / {c})", f"calc(y % {c})"]
+            lines += [f"calc(x // {c})", f"calc(x % {c})", f"calc(y // {c})", f"calc(y % {c})"]
 src = ("\n".join(lines) + "\n").encode()
 exp = oracle.run(src)[:3]
 tmp = tempfile.mkdtemp()

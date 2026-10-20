@@ -63,7 +63,11 @@ def evaluate(s: bytes) -> int:
         while True:
             ws()
             if p < n and s[p] in b"*/%":
-                op = s[p]; p += 1; r = unary()
+                op = s[p]; p += 1
+                if op == 47:                      # // (samo / wymaga import math)
+                    if p >= n or s[p] != 47: raise FihError("e_unexpected")
+                    p += 1
+                r = unary()
                 if op == 42: v = chk(v * r); continue
                 if r == 0: raise FihError("e_div0")
                 if r == -1:
@@ -121,7 +125,7 @@ def gen_expr(r, d=0):
     if d > 5 or k < 0.35: e = gen_number(r)
     elif k < 0.45: e = "(" + gen_expr(r, d + 1) + ")"
     elif k < 0.55: e = r.choice("-+") + gen_expr(r, d + 1)
-    else: e = gen_expr(r, d + 1) + r.choice(["+", "-", "*", "/", "%", " + ", " * ", "/", "%"]) + gen_expr(r, d + 1)
+    else: e = gen_expr(r, d + 1) + r.choice(["+", "-", "*", "//", "%", " + ", " * ", " // ", "%"] * 4 + ["/"]) + gen_expr(r, d + 1)
     if r.random() < 0.1: e = r.choice([" ", "\t", "  "]) + e + r.choice([" ", ""])
     return e
 

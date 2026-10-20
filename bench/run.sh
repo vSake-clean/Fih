@@ -62,4 +62,20 @@ hf --warmup 2 --export-json $O/loops.json \
    -n Fih "./fih $P/primes.fh" -n "Fih (build)" "$O/primes_fih" -n Python "$PY $P/primes.py" \
    -n C "$O/primes_c" -n C++ "$O/primes_cpp"
 
+# ułamki (0.4, import math): zbiór Mandelbrota i suma math.sqrt
+F=bench/floats
+for b in mandel sqrt; do
+    echo "benchmark ułamków ($b)..."
+    ./fih build $F/$b.fh -o $O/${b}_fih
+    gcc -O2 -o $O/${b}_c $F/$b.c -lm
+    g++ -O2 -o $O/${b}_cpp $F/$b.cpp
+    exp=$(./fih $F/$b.fh)
+    for cmd in "$O/${b}_fih" "$PY $F/$b.py" "$O/${b}_c" "$O/${b}_cpp"; do
+        [[ "$($cmd)" == "$exp" ]] || { echo "RÓŻNY WYNIK: $cmd"; exit 1; }
+    done
+    hf --warmup 2 --export-json $O/$b.json \
+       -n Fih "./fih $F/$b.fh" -n "Fih (build)" "$O/${b}_fih" -n Python "$PY $F/$b.py" \
+       -n C "$O/${b}_c" -n C++ "$O/${b}_cpp"
+done
+
 python3 bench/report.py "$N" "$O"

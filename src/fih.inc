@@ -16,7 +16,8 @@
 %define D_TMPCHUNK  80          ;   kawałka, kawałek (dq poprzedni, dq rozmiar, dane)
 %define D_HEAPPTR   88          ; pamięć zmiennych tekstowych: wolne miejsce,
 %define D_HEAPEND   96          ;   koniec kawałka
-%define D_OUTBUF    128         ; bufor wyjścia
+%define D_RNG       104         ; stan generatora math.random (4 × dq, zera = bez ziarna)
+%define D_OUTBUF    160         ; bufor wyjścia
 %define D_OUTSZ     65536
 %define D_INBUF     (D_OUTBUF + D_OUTSZ)    ; bufor wejścia
 %define D_INSZ      65536
@@ -47,6 +48,7 @@
 %define SYS_FCHMOD  91
 %define SYS_GETRLIMIT 97
 %define SYS_EXIT    60
+%define SYS_GETRANDOM 318
 
 %define STDOUT      1
 %define STDERR      2
@@ -76,6 +78,48 @@
 %define O_WRONLY    1
 %define O_CREAT     64
 %define O_TRUNC     512
+
+; funkcje math w środowisku (rt_math.inc): rt_math1(edi = M1_*), rt_math2(edi = M2_*)
+%define M1_SQRT     0
+%define M1_SIN      1
+%define M1_COS      2
+%define M1_TAN      3
+%define M1_ASIN     4
+%define M1_ACOS     5
+%define M1_ATAN     6
+%define M1_EXP      7
+%define M1_LOG      8
+%define M1_LOG2     9
+%define M1_LOG10    10
+%define M1_FLOOR    11
+%define M1_CEIL     12
+%define M1_TRUNC    13
+%define M1_ROUND    14
+%define M1_ABS      15
+%define M2_ATAN2    0
+%define M2_HYPOT    1
+%define M2_POW      2
+%define M2_LOG      3
+%define M2_ROUND    4
+%define M2_MIN      5
+%define M2_MAX      6
+%define M2_RANDINT  7
+
+; operatory dwuargumentowe (comp.asm; rt_darith i rt_numcmp w rt_flt.inc)
+%define OP_OR   1
+%define OP_AND  2
+%define OP_EQ   3
+%define OP_NE   4
+%define OP_LT   5
+%define OP_LE   6
+%define OP_GT   7
+%define OP_GE   8
+%define OP_ADD  9
+%define OP_SUB  10
+%define OP_MUL  11
+%define OP_IDIV 12              ; //: dzielenie całkowite
+%define OP_MOD  13
+%define OP_DIV  14              ; /: dzielenie z ułamkiem (import math)
 
 ; flagi opisu uprawnień (imp.asm -> rt_sandbox)
 %define POL_FILES    1

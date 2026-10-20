@@ -1,1 +1,1 @@
-fih: błąd w linii 1: nieznana funkcja 'pi' w module math (znane: abs, min, max, pow, sqrt, floor, ceil, round, sin, cos, tan, log, exp, random)
+fih: błąd w linii 1: nieznana funkcja 'tau' w module math (znane: abs, min, max, pow, sqrt, floor, ceil, round, trunc, sin, cos, tan, asin, acos, atan, atan2, log, log2, log10, exp, hypot, random, pi, e)

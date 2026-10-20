@@ -115,21 +115,32 @@ Jedna instrukcja na linię, komentarze od `#` do końca linii.
 | `print("...")` | wypisuje napis i znak nowej linii; sekwencje `\n` `\t` `\\` `\"` |
 | `write("...")`, `write(wyrażenie)` | jak `print`/`calc`, ale bez nowej linii |
 | `calc(wyrażenie)` | wypisuje wartość wyrażenia (także `calc("wyrażenie")`, jak w 0.1) |
-| `x = wyrażenie` | przypisanie; także `+=` `-=` `*=` `/=` `%=` |
+| `x = wyrażenie` | przypisanie; także `+=` `-=` `*=` `//=` `%=` (`/=` z `import math`) |
 | `if w {` … `} else if w {` … `} else {` … `}` | warunek (prawda = różne od 0) |
 | `while w {` … `}` | pętla; `break` i `continue` |
 | `input()`, `inputchar()` | (w wyrażeniu) liczba / kod znaku z linii wejścia; `inputok()`, `eof()` |
 
-Wyrażenia: liczby całkowite 64-bit, zmienne, `+ - * / %`, nawiasy, unarny `-`,
+Wyrażenia: liczby całkowite 64-bit, zmienne, `+ - * // %`, nawiasy, unarny `-`,
 porównania `== != < <= > >=` (wynik 1 albo 0, łańcuchy jak w Pythonie:
 `0 < x < 10`), `and`, `or`, `not` (liczone tylko w razie potrzeby), literały
 znakowe `'+'` (kod znaku).
-`/` obcina w stronę zera, `%` ma znak dzielnej (jak w C). Przepełnienie (np.
+`//` obcina w stronę zera, `%` ma znak dzielnej (jak w C). Przepełnienie (np.
 `9223372036854775807 + 1`) i dzielenie przez zero to błędy z numerem linii,
 a nie cicho zła liczba:
 
 ```
 fih: błąd w linii 2: dzielenie przez zero
+```
+
+Z `import math` dochodzą ułamki (`2.5`, `7 / 2` = 3.5, wypisywane jak w
+Pythonie) i funkcje `math.sqrt`, `math.sin`, `math.floor`, `math.round`,
+`math.pow`, `math.random`, `math.pi`... (pełna lista w [SPEC.md](SPEC.md)):
+
+```
+import math
+r = 2.5
+print("pole koła: " + math.pi * r * r)    # pole koła: 19.634954084936208
+print(math.floor(7 / 2))                  # 3
 ```
 
 Zmienna użyta przed przypisaniem to błąd: `nieznana zmienna 'x'` (przed
@@ -148,7 +159,7 @@ Fih nigdy nie powinien skończyć się awarią. Każda sytuacja kończy się kom
 - pełny dysk, `/dev/full`, zamknięty potok; przy `build` niepełny plik wynikowy jest usuwany;
 - brak pamięci albo limit procesów: tryb wielordzeniowy przechodzi wtedy na wykonanie po kolei.
 
-Sprawdzają to `make test` (199 testów, programy w obu trybach) i `make fuzz`:
+Sprawdzają to `make test` (295 testów, programy w obu trybach) i `make fuzz`:
 
 - `tests/fuzz/oracle.py`: niezależna implementacja Fih w Pythonie (wyrocznia);
 - `tests/fuzz/fuzz2.py`: losowe programy 0.2 (zmienne, `if`, `while`, `break`,
@@ -171,8 +182,9 @@ dokładny albo zgłoszony jako błąd:
 
 ## Wydajność
 
-Pomiar na Celeronie 1005M (2 rdzenie), im więcej, tym lepiej. Fih jest
-szybszy od C (gcc -O2) we wszystkich pomiarach.
+Pomiar na Celeronie 1005M (2 rdzenie), im więcej, tym lepiej. Na liczbach
+całkowitych Fih jest szybszy od C (gcc -O2) we wszystkich pomiarach; na
+ułamkach jest 2–2,5 razy wolniejszy od C i ponad 20 razy szybszy od Pythona.
 
 **Pętle** — liczby pierwsze mniejsze od 300 000 sprawdzane dzieleniem próbnym
 (`while`, `if`, `%`, `break`), ten sam algorytm w każdym języku
@@ -187,13 +199,22 @@ szybszy od C (gcc -O2) we wszystkich pomiarach.
 ![Hello World](docs/startup.svg)
 ![Wykonanie na jednym rdzeniu](docs/exec1.svg)
 
+**Ułamki** (`import math`) — zbiór Mandelbrota 600 × 400 punktów, do 100 kroków
+(`bench/floats/mandel.*`), i suma `math.sqrt(i)` dla i < 3 000 000
+(`bench/floats/sqrt.*`):
+
+![Ułamki: zbiór Mandelbrota](docs/floats.svg)
+![math.sqrt w pętli](docs/math.svg)
+
 | | Fih | Fih (build) | C (gcc -O2) | C++ (g++ -O2) | Python 3.13 |
 |---|---|---|---|---|---|
 | pętle, liczb/s | **2,5 mln** | **2,5 mln** | 1,4 mln | 1,4 mln | 59 tys. |
-| program print/calc, linii/s | **11,7 mln** (2 rdzenie) | **290 mln** | 8,1 mln | 6,8 mln | 43 tys. |
-| ten sam na 1 rdzeniu, linii/s | **7,9 mln** | | 7,5 mln | | |
-| od źródła do wyniku, linii/s | **11,7 mln** | 8,0 mln | 2,9 tys. | 977 | 43 tys. |
-| Hello World, uruchomień/s | 2,6 tys. | **3,1 tys.** | 1,1 tys. | 449 | 40 |
+| program print/calc, linii/s | **13,3 mln** (2 rdzenie) | **367 mln** | 8,3 mln | 6,9 mln | 42 tys. |
+| ten sam na 1 rdzeniu, linii/s | **8,0 mln** | | 7,7 mln | | |
+| od źródła do wyniku, linii/s | **13,3 mln** | 9,0 mln | 2,9 tys. | 977 | 42 tys. |
+| Hello World, uruchomień/s | 3,1 tys. | **3,7 tys.** | 1,2 tys. | 495 | 40 |
+| Mandelbrot, punktów/s | 3,1 mln | 3,2 mln | **7,8 mln** | 7,6 mln | 58 tys. |
+| math.sqrt, pierwiastków/s | 58 mln | 61 mln | 113 mln | **123 mln** | 2,6 mln |
 
 W pętlach Fih jest 1,9 razy szybszy od C i 43 razy szybszy od Pythona.
 Kompilator zamienia dzielenie przez stałą na mnożenie, porównania w warunkach
@@ -208,12 +229,18 @@ po 2 cyfry bez dzielenia, wyrażenia w jednym przejściu, typowa ścieżka bez
 skoków, duże programy na wszystkich rdzeniach. `fih build` liczy taki program
 już podczas kompilacji, więc plik wynikowy tylko wypisuje gotowy wynik.
 
+Ułamki liczą instrukcje SSE2 (dodawanie, mnożenie, pierwiastek), a funkcje
+przestępne koprocesor x87. C wygrywa, bo trzyma zmienne w rejestrach
+procesora; Fih trzyma je w pamięci (to plan na później, [ROADMAP.md](ROADMAP.md)).
+
 ## Struktura
 
 ```
 src/main.asm    start programu, wczytanie pliku, wybór silnika
 src/comp.asm    kompilator 0.2: parser, generator kodu x86-64, JIT, zapis ELF
-src/rt.asm      środowisko uruchomieniowe skompilowanych programów (wyjście, błędy)
+src/rt.asm      środowisko uruchomieniowe skompilowanych programów (wyjście, błędy,
+                ułamki: rt_flt.inc, rt_dec.inc; funkcje math: rt_math.inc)
+src/imp.asm     importy i uprawnienia (Landlock, limity, seccomp)
 src/interp.asm  szybki interpreter programów print/calc
 src/expr.asm    parser i ewaluator wyrażeń stałych dla calc
 src/io.asm      wyjście (stdout albo pamięć), liczby, błędy

@@ -29,7 +29,7 @@ done
 # build się udaje, a skompilowany program kończy się tym samym błędem;
 # wyjście przed błędem: X.out (gdy brak — puste). Każdy inny błąd jest
 # wykrywany przed uruchomieniem: nic nie jest wypisane, build nie tworzy pliku.
-runtime_re=': (dzielenie przez zero|indeks poza tekstem|przepełnienie: wynik poza zakresem liczb 64-bitowych|zmienna .* nie ma jeszcze wartości)$'
+runtime_re=': (dzielenie przez zero|indeks poza tekstem|przepełnienie: wynik poza zakresem liczb 64-bitowych|tu potrzebna jest liczba całkowita|argument spoza dziedziny funkcji matematycznej|wynik za duży, by zapisać go jako ułamek|zmienna .* nie ma jeszcze wartości)$'
 for f in tests/err/*.fh; do
     exp=$(cat "${f%.fh}.err")
     expout=""; [[ -f "${f%.fh}.out" ]] && expout=$(cat "${f%.fh}.out")
@@ -101,7 +101,7 @@ cmp -s <(taskset -c 0 ./fih "$T/par/program.fh") "$T/par/expected" && ok || bad 
 cmp -s <(prlimit --nproc=1 ./fih "$T/par/program.fh") "$T/par/expected" && ok || bad "fork niemożliwy: wynik"
 cmp -s <(ulimit -v 200000; ./fih "$T/par/program.fh") "$T/par/expected" && ok || bad "mało pamięci wirtualnej: wynik"
 ./fih build "$T/par/program.fh" -o "$T/par/bin" && cmp -s <("$T/par/bin") "$T/par/expected" && ok || bad "wielordzeniowo: build"
-{ cat "$T/par/program.fh"; echo 'calc("1/0")'; } > "$T/par/err.fh"
+{ cat "$T/par/program.fh"; echo 'calc("1//0")'; } > "$T/par/err.fh"
 [[ "$(./fih "$T/par/err.fh" 2>&1 >/dev/null)" == "fih: błąd w linii 30001: dzielenie przez zero" ]] && ok || bad "wielordzeniowo: numer linii błędu"
 cmp -s <(./fih "$T/par/err.fh" 2>/dev/null) "$T/par/expected" && ok || bad "wielordzeniowo: wyjście przed błędem"
 [[ "$(prlimit --nproc=1 ./fih "$T/par/err.fh" 2>&1 >/dev/null)" == "fih: błąd w linii 30001: dzielenie przez zero" ]] && ok || bad "fork niemożliwy: numer linii błędu"

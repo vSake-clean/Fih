@@ -71,7 +71,8 @@ instrukcja  = print | write | calc | przypisanie | if | while | koniec_bloku
 print       = "print" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 write       = "write" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
 calc        = "calc" [ odstęp ] "(" [ odstęp ] ( napis | wyrażenie ) [ odstęp ] ")" ;
-przypisanie = nazwa [ odstęp ] ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) wyrażenie ;
+przypisanie = nazwa [ odstęp ] ( "=" | "+=" | "-=" | "*=" | "//=" | "/=" | "%=" ) wyrażenie ;
+                                                    (* "/=": tylko z import math *)
 if          = "if" wyrażenie "{" ;
 while       = "while" wyrażenie "{" ;
 koniec_bloku= "}" [ "else" ( "{" | "if" wyrażenie "{" ) ] ;
@@ -88,16 +89,18 @@ and         = not { "and" not } ;
 not         = "not" not | porównanie ;
 porównanie  = suma { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) suma } ;
 suma        = iloczyn { ( "+" | "-" ) iloczyn } ;
-iloczyn     = unarny { ( "*" | "/" | "%" ) unarny } ;
+iloczyn     = unarny { ( "*" | "//" | "/" | "%" ) unarny } ;   (* "/": tylko z import math *)
 unarny      = ( "-" | "+" ) unarny | prosty ;
 prosty      = atom { indeks } ;                     (* indeks: tylko tekst, 0.4 *)
-atom        = liczba | znak_lit | napis | nazwa | funkcja | "(" wyrażenie ")" ;
+atom        = liczba | ułamek | znak_lit | napis | nazwa | funkcja | math | "(" wyrażenie ")" ;
 indeks      = "[" wyrażenie "]" | "[" [ wyrażenie ] ":" [ wyrażenie ] "]" ;
 funkcja     = ( "input" | "inputchar" | "inputok" | "eof" | "inputtext" ) [ odstęp ] "(" [ odstęp ] ")"
             | "len" [ odstęp ] "(" wyrażenie ")" ;
 znak_lit    = "'" ( drukowalny | "\n" | "\t" | "\\" | "\'" ) "'" ;  (* kod znaku *)
 drukowalny  = bajt 32..126 oprócz "'" ;
 liczba      = cyfra { cyfra } ;                     (* tylko dziesiętne *)
+ułamek      = cyfra { cyfra } "." cyfra { cyfra } ;  (* tylko z import math *)
+math        = "math." nazwa [ [ odstęp ] "(" [ wyrażenie { "," wyrażenie } ] ")" ] ;
 nazwa       = ( litera | "_" ) { litera | cyfra | "_" } ;   (* litery ASCII *)
 ```
 
@@ -143,7 +146,7 @@ jednym wyrażeniem.
 
 ```
 x = 2 + 3      # nowa zmienna albo nowa wartość
-x += 1         # x = x + 1; podobnie -= *= /= %=
+x += 1         # x = x + 1; podobnie -= *= //= %= (i /= z import math)
 t = "Ala"      # zmienna tekstowa (0.4)
 t += " ma kota"   # dopisanie na końcu
 ```
@@ -184,15 +187,16 @@ działa, dopóki program nie zostanie przerwany.
 
 ## 6. Wyrażenia
 
-Wszystkie wartości to liczby całkowite 64-bitowe ze znakiem: od
-`-9223372036854775808` do `9223372036854775807`.
+Liczby całkowite są 64-bitowe ze znakiem: od `-9223372036854775808` do
+`9223372036854775807`. Z `import math` dochodzą ułamki (punkt „Ułamki”),
+a od 0.4 wyrażenie może być też tekstem (punkt „Teksty”).
 
 Priorytety (od najwyższego):
 
 | poziom | operatory | łączność |
 |--------|-----------|----------|
 | 1 | unarne `-` `+` | wiązane z najbliższym argumentem |
-| 2 | `*` `/` `%` | lewostronna |
+| 2 | `*` `//` `/` `%` | lewostronna |
 | 3 | `+` `-` | lewostronna |
 | 4 | `==` `!=` `<` `<=` `>` `>=` | łańcuch (jak w Pythonie) |
 | 5 | `not` | prawostronna |
@@ -201,19 +205,23 @@ Priorytety (od najwyższego):
 
 - Literały: tylko nieujemne liczby dziesiętne, zera wiodące są dozwolone (`007` = 7).
   Największy literał to `9223372036854775807`. Najmniejszą liczbę zapisuje się
-  jako `-9223372036854775807 - 1`. Brak liczb ułamkowych, `1e3`, zapisu szesnastkowego.
+  jako `-9223372036854775807 - 1`. Ułamki (`2.5`) tylko z `import math`.
+  Brak zapisu `1e3` i szesnastkowego.
 - Unarne minusy i plusy można łączyć: `--5` = 5, `- 5` = -5, `2*-3` = -6.
   Minus wiąże tylko najbliższy argument: `-2 * 3` to `(-2) * 3`.
-- `/` obcina w stronę zera: `-7 / 2` = -3. `%` ma znak dzielnej:
-  `-7 % 2` = -1, `7 % -2` = 1 (jak w C). Dzielenie i reszta przez zero to błąd.
+- `//` to dzielenie całkowite, obcina w stronę zera: `-7 // 2` = -3. `%` ma
+  znak dzielnej: `-7 % 2` = -1, `7 % -2` = 1 (jak w C). Dzielenie i reszta
+  przez zero to błąd.
+- `/` daje ułamek (`7 / 2` = 3.5) i wymaga `import math`. Bez importu `/` to
+  błąd przed uruchomieniem z podpowiedzią, żeby użyć `//`.
 - Przepełnienie to błąd, a nie zawinięcie: `9223372036854775807 + 1`,
   `4294967296 * 4294967296`, `-(-9223372036854775807 - 1)`,
-  `(-9223372036854775807 - 1) / -1`. Wyjątek: `(-9223372036854775807 - 1) % -1` = 0.
+  `(-9223372036854775807 - 1) // -1`. Wyjątek: `(-9223372036854775807 - 1) % -1` = 0.
 - Porównanie daje 1 (prawda) albo 0 (fałsz). Łańcuch `a < b < c` znaczy
   `a < b and b < c`, przy czym `b` jest liczone raz, a `c` tylko wtedy,
   gdy `a < b` jest prawdą. Można mieszać operatory: `1 < 2 > 0` = 1.
 - `and` i `or` dają 1 albo 0 i liczą prawy argument tylko w razie potrzeby:
-  `0 and 1 / 0` = 0 i `1 or 1 / 0` = 1 (bez błędu).
+  `0 and 1 // 0` = 0 i `1 or 1 // 0` = 1 (bez błędu).
 - `not x` daje 1, gdy `x` = 0, inaczej 0. `not` ma niższy priorytet niż
   porównania: `not x == 5` znaczy `not (x == 5)`. `not` może stać tylko na
   początku wyrażenia, po `and`/`or`, po innym `not` albo po `(`:
@@ -318,6 +326,82 @@ w cudzysłowie, ze zmiennej tekstowej, z `inputtext()` albo z działań poniżej
 - `len` i `inputtext` nie są słowami zarezerwowanymi: są funkcjami tylko
   wtedy, gdy stoi po nich `(`.
 
+### Ułamki i `import math` (0.4, w budowie)
+
+Z `import math` liczba może być ułamkiem (double, 64 bity, jak `float`
+w Pythonie):
+
+```
+import math
+print(7 / 2)              # 3.5
+print(0.1 + 0.2)          # 0.30000000000000004
+r = 2.5
+print(math.pi * r * r)    # 19.634954084936208
+print("pole: " + r * r)   # pole: 6.25
+print(math.sqrt(2))       # 1.4142135623730951
+print(math.floor(2.7))    # 2
+```
+
+- Ułamek zapisuje się z kropką i cyframi po obu stronach: `2.5`, `0.5`,
+  `3.0` (nie `.5` ani `5.`). Literał jest dokładnie zaokrąglany (jak `float()`
+  w Pythonie), za duży (ponad ok. 1.8 · 10^308) to błąd `liczba za duża`.
+- Liczba całkowita z ułamkiem daje ułamek: `1 + 0.5` = 1.5, `2 * 1.5` = 3.0.
+  `/` zawsze daje ułamek, także dla liczb całkowitych (`6 / 3` = 2.0), dokładnie
+  zaokrąglony. `//` i `%` działają też na ułamkach: `7.5 // 2` = 3.0,
+  `7.5 % 2` = 1.5, `-7.5 % 2` = -1.5 (obcinanie w stronę zera i znak dzielnej,
+  jak dla liczb całkowitych — inaczej niż w Pythonie).
+- Wypisywanie (także w tekście): najkrótszy zapis, który daje z powrotem tę
+  samą liczbę — jak `repr` w Pythonie: `3.0`, `0.1`, `1e+16`, `1e-05`, `-0.0`.
+- Ułamki nie mają przepełnienia: za duży wynik to `inf`, `-inf`, a działania
+  bez sensu (`inf - inf`) dają `nan`. Dzielenie przez zero (także przez `0.0`)
+  to błąd.
+- Porównania liczby całkowitej z ułamkiem są dokładne:
+  `9007199254740993 == 9007199254740992.0` = 0. `nan` nie jest równy niczemu,
+  także sobie. Warunek z ułamkiem jest prawdziwy, gdy ułamek ≠ 0 (`nan` też).
+- Zmienna liczbowa może trzymać raz liczbę całkowitą, raz ułamek: `x = 5`,
+  potem `x = x / 2` (2.5). Kompilator sam ustala, które zmienne są zawsze
+  całkowite, zawsze ułamkami albo raz takie, raz takie.
+- Tam, gdzie potrzebna jest liczba całkowita (indeks `t[i]`, wycinek,
+  `math.random(a, b)`, drugi argument `math.round`), ułamek kończy program
+  błędem `tu potrzebna jest liczba całkowita`. Zamiana: `math.floor`,
+  `math.round` itd.
+
+Funkcje i stałe modułu `math` (wywołanie: `math.nazwa(...)`; liczba całkowita
+w funkcji ułamkowej zamienia się najpierw na ułamek):
+
+| zapis | wynik |
+|---|---|
+| `math.pi`, `math.e` | stałe π i e |
+| `math.abs(x)` | wartość bezwzględna (tego samego rodzaju co `x`) |
+| `math.min(a, b, ...)`, `math.max(a, b, ...)` | najmniejsza / największa z co najmniej dwóch liczb (przy równych: pierwsza) |
+| `math.pow(a, b)` | a do potęgi b; dwie liczby całkowite i b ≥ 0: liczba całkowita (przepełnienie to błąd), inaczej ułamek |
+| `math.sqrt(x)` | pierwiastek kwadratowy (ułamek) |
+| `math.floor(x)`, `math.ceil(x)`, `math.trunc(x)` | liczba całkowita: w dół, w górę, w stronę zera |
+| `math.round(x)` | najbliższa liczba całkowita, przy remisie parzysta: `math.round(2.5)` = 2 |
+| `math.round(x, n)` | zaokrąglenie do `n` cyfr po kropce (`n` < 0: do dziesiątek, setek...), dokładnie jak `round` w Pythonie: `math.round(2.675, 2)` = 2.67 |
+| `math.sin`, `cos`, `tan`, `asin`, `acos`, `atan` | funkcje trygonometryczne (radiany) |
+| `math.atan2(y, x)` | kąt punktu (x, y) |
+| `math.hypot(x, y)` | √(x² + y²) |
+| `math.exp(x)`, `math.log(x)`, `math.log(x, podstawa)`, `math.log2(x)`, `math.log10(x)` | e^x i logarytmy |
+| `math.random()` | losowy ułamek z [0, 1) |
+| `math.random(a, b)` | losowa liczba całkowita z [a, b] (włącznie) |
+
+- Argument spoza dziedziny (`math.sqrt(-1)`, `math.log(0)`, `math.asin(2)`,
+  `math.pow(-8, 0.5)`, `math.floor` z `nan`, `math.random(5, 1)`) kończy
+  program błędem `argument spoza dziedziny funkcji matematycznej`, a za duży
+  wynik (`math.exp(1000)`, `math.pow(10.0, 400)`) — błędem
+  `wynik za duży, by zapisać go jako ułamek`. `math.floor(inf)` i inne zbyt
+  duże liczby całkowite: `przepełnienie`.
+- Funkcje przestępne (sin, exp, log, pow dla ułamków...) liczy koprocesor
+  x87 z 64 bitami mantysy. Wynik może się różnić od Pythona na ostatnim
+  bicie (zwykle Fih jest dokładniejszy; `math.pow` z ułamkowym wykładnikiem
+  czasem mniej). `sin`, `cos`, `tan` dokładnie redukują nawet bardzo duże
+  argumenty.
+- `math.random` startuje z losowego ziarna od jądra (getrandom), generator
+  xoshiro256**. Nie służy do kryptografii.
+- `math.x` bez `import math` to błąd przed uruchomieniem; tak samo funkcja,
+  której nie ma na liście `only` (`import math only sqrt, floor`).
+
 ## 7. Zmienne
 
 - Nazwa: litery ASCII, cyfry i `_`, nie zaczyna się od cyfry. Wielkość liter
@@ -360,9 +444,9 @@ import net only get, post                   # tylko te funkcje
 import net only example.com, localhost      # domeny można podać też w only
 ```
 
-W wersji w budowie działają same importy (sprawdzanie składni i blokady
-systemu). Funkcje modułów (`math.sqrt`, `files.read`, ...) dochodzą w kolejnych
-krokach wersji 0.4.
+W wersji w budowie działa moduł `math` (punkt 6, „Ułamki”) oraz same importy
+pozostałych modułów (sprawdzanie składni i blokady systemu). Funkcje `files`,
+`commands` i `net` dochodzą w kolejnych krokach wersji 0.4.
 
 ```ebnf
 import      = "import" odstęp moduł [ odstęp miejsce ] [ odstęp "only" odstęp lista ] ;
@@ -382,8 +466,9 @@ lista       = element { [ odstęp ] "," [ odstęp ] element } ;
 - Funkcje w `only`:
   - `files`: `read`, `write`, `append`, `exists`, `delete`, `rename`, `mkdir`, `list`;
   - `net`: `get`, `post`, `download`, `tcp` oraz domeny (słowo z kropką albo `localhost`);
-  - `math`: `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`, `sin`,
-    `cos`, `tan`, `log`, `exp`, `random`;
+  - `math`: `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`,
+    `trunc`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log`,
+    `log2`, `log10`, `exp`, `hypot`, `random`, `pi`, `e`;
   - `commands`: nazwy poleceń (litery, cyfry, `_ . + -`).
 - `import = 5` (bez nazwy modułu za słowem) to nadal zwykłe przypisanie do
   zmiennej `import`, więc programy 0.3 działają bez zmian.
@@ -436,7 +521,14 @@ Zgłaszany jest pierwszy błąd w pliku.
 | `break poza pętlą` / `continue poza pętlą` | `break` poza `while` |
 | `nieznana zmienna 'x'` | `calc(x)` bez wcześniejszego `x = ...` |
 | `niekompletne wyrażenie` | `calc("")`, `x = 2 *` |
-| `nieoczekiwany znak w wyrażeniu` | `calc(2 3)`, `calc(1e3)`, `calc(1 + not 0)` |
+| `nieoczekiwany znak w wyrażeniu` | `calc(2 3)`, `calc(1 + not 0)` |
+| `dzielenie / daje ułamek: dodaj import math albo użyj // (dzielenie całkowite)` | `calc(7 / 2)` bez `import math` |
+| `ułamki (liczby z kropką) wymagają import math` | `x = 2.5` bez `import math` |
+| `math.… wymaga import math na początku programu` | `print(math.sqrt(2))` bez importu |
+| `nieznana funkcja modułu math` | `math.sqroot(2)` |
+| `tej funkcji math nie ma na liście only w import math` | `import math only sqrt`, potem `math.sin(1)` |
+| `oczekiwano '(' po nazwie funkcji math` | `print(math.sqrt)` |
+| `zła liczba argumentów funkcji math` | `math.min(1)`, `math.sqrt(1, 2)` |
 | `brak ')' w wyrażeniu` | `calc((2 + 3)` |
 | `liczba za duża (max 9223372036854775807)` | `calc(9223372036854775808)` |
 | `wyrażenie zbyt głęboko zagnieżdżone` | bardzo dużo nawiasów (punkt 11) |
@@ -474,10 +566,13 @@ wyjściem, komunikatem i kodem co `fih program.fh`.
 
 | komunikat | przykład |
 |-----------|----------|
-| `dzielenie przez zero` | `calc(1 / 0)`, `x %= 0` |
+| `dzielenie przez zero` | `calc(1 // 0)`, `x %= 0`, `x / 0.0` |
 | `przepełnienie: wynik poza zakresem liczb 64-bitowych` | `calc(9223372036854775807 + 1)` |
 | `zmienna 'x' nie ma jeszcze wartości` | `if 0 {` … `x = 1` … `}`, potem `calc(x)` |
 | `indeks poza tekstem` | `t = "abc"`, potem `print(t[3])` |
+| `tu potrzebna jest liczba całkowita` | `t[1 / 2]`, `math.random(1.5, 3)` |
+| `argument spoza dziedziny funkcji matematycznej` | `math.sqrt(-1)`, `math.log(0)` |
+| `wynik za duży, by zapisać go jako ułamek` | `math.exp(1000)` |
 
 ### Błędy bez numeru linii
 
@@ -546,7 +641,10 @@ Plan dalszych wersji: [ROADMAP.md](ROADMAP.md).
 ## 13. Zmiany wobec wcześniejszych wersji
 
 0.4 (w budowie): `print` przyjmuje wyrażenia, więc `print(2)` nie jest już
-błędem. Zmienna nie może zmienić rodzaju (liczba/tekst).
+błędem. Zmienna nie może zmienić rodzaju (liczba/tekst). **Dzielenie
+całkowite to teraz `//` (i `//=`)**: `/` daje ułamek i wymaga `import math`,
+więc w programach 0.3 trzeba zamienić `/` na `//` i `/=` na `//=`
+(bez tego program jest odrzucany z podpowiedzią).
 
 0.3: nowe słowa zarezerwowane (`write`, `input`, `inputchar`, `inputok`,
 `eof`) — program 0.2 ze zmienną o takiej nazwie trzeba poprawić. Poza tym

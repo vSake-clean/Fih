@@ -9,7 +9,7 @@ FIH = os.environ.get("FIH") or os.path.join(os.path.dirname(__file__), "..", "..
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
 seed = int(sys.argv[2]) if len(sys.argv) > 2 else random.randrange(1 << 30)
 r = random.Random(seed)
-seeds = [b'print("ryba")\ncalc("(1 + 2) * -3 / 4 % 5")\n', b'calc("9223372036854775807+1")\n# k\n',
+seeds = [b'print("ryba")\ncalc("(1 + 2) * -3 // 4 % 5")\n', b'calc("9223372036854775807+1")\n# k\n',
          b'print("a\\tb\\\\c\\"d\\n")\n', b'calc("' + b"(" * 50 + b"1" + b")" * 50 + b'")\n']
 tmp = tempfile.mkdtemp(); p = os.path.join(tmp, "p.fh"); out = os.path.join(tmp, "o")
 small = lambda: resource.setrlimit(resource.RLIMIT_STACK, (256 * 1024, 256 * 1024))

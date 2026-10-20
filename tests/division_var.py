@@ -17,7 +17,7 @@ for a in vals:
     for b in vals:
         if b == 0 or (a == -I64 - 1 and b == -1):
             continue                    # błędy w trakcie sprawdzają inne testy
-        lines += [f"a = {lit(a)}", f"b = {lit(b)}", "calc(a / b)", "calc(a % b)"]
+        lines += [f"a = {lit(a)}", f"b = {lit(b)}", "calc(a // b)", "calc(a % b)"]
 src = ("\n".join(lines) + "\n").encode()
 exp = oracle.run(src)[:3]
 p = os.path.join(tempfile.mkdtemp(), "d.fh")

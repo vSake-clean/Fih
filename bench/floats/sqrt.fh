@@ -1,0 +1,9 @@
+# suma pierwiastków liczb 0 .. 2 999 999 (math.sqrt), wynik obcięty do całości
+import math
+s = 0.0
+i = 0
+while i < 3000000 {
+    s = s + math.sqrt(i)
+    i += 1
+}
+print(math.floor(s))

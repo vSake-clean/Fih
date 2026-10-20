@@ -27,7 +27,7 @@ CHUNK = 500  # C/C++: dzielimy na funkcje, żeby gcc nie mielił jednej gigantyc
 
 with open(f"{out}/program.fh", "w") as fh:
     for kind, t in lines:
-        fh.write(f'{kind}("{t}")\n')
+        fh.write(f'{kind}("{t if kind == "print" else py_expr(t)}")\n')
 
 with open(f"{out}/program.py", "w") as fh:
     for kind, t in lines:

@@ -9,6 +9,7 @@ exec_t, comp_t, hello_t = load("exec.json"), load("compile.json"), load("hello.j
 comp_t.update(load("compile_fih.json"))
 exec1_t = load("exec1.json")
 loops_t = load("loops.json")
+mandel_t, sqrt_t = load("mandel.json"), load("sqrt.json")
 PRIMES = 300_000 - 2       # liczby sprawdzane w bench/primes
 langs = ["Fih", "Fih (build)", "C", "C++", "Python"]
 
@@ -25,6 +26,12 @@ charts = [
     {"id": "loops", "title": "Pętle: liczby pierwsze", "unit": "liczb/s",
      "note": "liczby < 300 000 sprawdzane dzieleniem próbnym (while, if, %, break)",
      "values": {l: PRIMES / loops_t[l] for l in langs}},
+    {"id": "floats", "title": "Ułamki: zbiór Mandelbrota", "unit": "punktów/s",
+     "note": "600 × 400 punktów, do 100 kroków (mnożenie, dodawanie, porównanie ułamków)",
+     "values": {l: 600 * 400 / mandel_t[l] for l in langs}},
+    {"id": "math", "title": "math.sqrt w pętli", "unit": "pierwiastków/s",
+     "note": "suma math.sqrt(i) dla i < 3 000 000",
+     "values": {l: 3_000_000 / sqrt_t[l] for l in langs}},
 ]
 cpu = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "?")
 json.dump({"n": n, "cpu": cpu, "charts": charts}, open("bench/results.json", "w"), indent=2, ensure_ascii=False)
@@ -32,7 +39,7 @@ single = {"id": "exec1", "title": "Wykonanie na jednym rdzeniu", "unit": "linii/
           "note": "taskset -c 0: interpretowany Fih vs skompilowane C",
           "values": {l: n / exec1_t[l] for l in ("Fih", "C")}}
 times = {"exec": exec_t, "source": {l: exec_t[l] + comp_t.get(l, 0) for l in langs}, "startup": hello_t,
-         "loops": loops_t}
+         "loops": loops_t, "floats": mandel_t, "math": sqrt_t}
 with open("bench/results.csv", "w") as fh:
     fh.write("test,lang,value,unit,ms\n")
     for ch in charts:

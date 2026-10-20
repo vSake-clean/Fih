@@ -58,7 +58,7 @@ class Gen:
         if d > 4 or k < 0.3: return self.atom()
         if k < 0.4: return "(" + self.expr(d + 1) + ")"
         if k < 0.7 or level == 2:
-            return self.expr(d + 1, 2) + r.choice([" + ", " - ", " * ", " / ", " % ", "+", "*", "-"]) + self.expr(d + 1, 2)
+            return self.expr(d + 1, 2) + r.choice([" + ", " - ", " * ", " // ", " % ", "+", "*", "-", "//"] * 8 + [" / "]) + self.expr(d + 1, 2)
         if k < 0.85 or level == 1:
             e = self.expr(d + 1, 2)
             for _ in range(r.choice([1, 1, 1, 2, 3])):
@@ -84,7 +84,7 @@ class Gen:
         if k < 0.3:
             v = self.var(read=False)
             if v in self.known and r.random() < 0.4:
-                lines.append(f"{ind}{v} {r.choice(['+', '-', '*', '/', '%'])}= {self.expr()}")
+                lines.append(f"{ind}{v} {r.choice(['+', '-', '*', '//', '%'] * 8 + ['/'])}= {self.expr()}")
             else:
                 lines.append(f"{ind}{v} = {self.expr()}")
                 self.known.add(v)

@@ -23,10 +23,27 @@ Wersje: `0.MINOR.PATCH` (patrz [CONTRIBUTING.md](CONTRIBUTING.md#wersje)).
   pierwsze przypisanie; pomyłki są błędami przed uruchomieniem.
 - `print(wyrażenie)`: `print(2 + 3)` wypisuje `5`.
 - `tests/fuzz/text_fuzz.py`: losowe programy na tekstach porównywane z Pythonem.
+- Ułamki (z `import math`): literały `2.5`, `/` daje ułamek, `//` i `%` także
+  dla ułamków, wypisywanie jak `repr` w Pythonie (najkrótszy dokładny zapis),
+  dokładne porównania liczb całkowitych z ułamkami, `inf` i `nan`.
+  Zmienna może trzymać raz liczbę całkowitą, raz ułamek; kompilator ustala
+  rodzaj każdej zmiennej w kilku przebiegach.
+- Moduł `math`: `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`
+  (także `round(x, n)`), `trunc`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`,
+  `atan2`, `log` (też z podstawą), `log2`, `log10`, `exp`, `hypot`, `random`
+  (xoshiro256**, ziarno z getrandom), `pi`, `e`. Stałe argumenty liczone już
+  podczas kompilacji.
+- Nowe błędy w trakcie: `tu potrzebna jest liczba całkowita`, `argument spoza
+  dziedziny funkcji matematycznej`, `wynik za duży, by zapisać go jako ułamek`.
+- `tests/fuzz/flt_fuzz.py`: losowe programy z ułamkami i `math` porównywane
+  z Pythonem; benchmarki `bench/floats/` (Mandelbrot, suma pierwiastków).
 
 ### Zmienione
 - `print(2)` nie jest już błędem (komunikat `oczekiwano napisu w cudzysłowie`
   zniknął).
+- **Dzielenie całkowite to teraz `//` i `//=`.** `/` daje ułamek i wymaga
+  `import math`; bez importu program 0.3 z `/` jest odrzucany z podpowiedzią,
+  by użyć `//`. Przykłady i testy poprawione.
 
 ## [0.3.1] - 2026-10-19
 

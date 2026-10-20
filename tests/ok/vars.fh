@@ -6,7 +6,7 @@ calc(y - x)
 x += 5
 x -= 1
 x *= 3
-x /= 4
+x //= 4
 calc(x)
 x %= 7
 calc(x)

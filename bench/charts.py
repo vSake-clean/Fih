@@ -63,6 +63,10 @@ chart("startup", "Hello World [uruchomień/s]", f"ile razy na sekundę da się u
       rows["startup"], True)
 chart("loops", "Pętle: liczby pierwsze [liczb/s]",
       f"liczby < 300 000 sprawdzane dzieleniem próbnym (while, if, %, break) · {logsub}", rows["loops"], True)
+chart("floats", "Ułamki: zbiór Mandelbrota [punktów/s]",
+      f"600 × 400 punktów, do 100 kroków; import math · {logsub}", rows["floats"], True)
+chart("math", "math.sqrt w pętli [pierwiastków/s]",
+      f"suma math.sqrt(i) dla i < 3 000 000 · {logsub}", rows["math"], True)
 chart("exec1", "Wykonanie na jednym rdzeniu [linii/s]",
       "taskset -c 0: interpretowany Fih vs skompilowane C · wyżej = lepiej", rows["exec1"], False)
 

@@ -8,19 +8,19 @@ text{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#24292
 <text class="t" x="16" y="26">Hello World [uruchomień/s]</text>
 <text class="s" x="16" y="46">ile razy na sekundę da się uruchomić program · wyżej = lepiej · skala logarytmiczna</text>
 <line class="g" x1="16" x2="744" y1="296" y2="296"/>
-<rect class="f" x="56.8" y="87.8" width="64.0" height="208.2" rx="3"/>
-<text class="v" x="88.8" y="81.8" text-anchor="middle">2,6 tys.</text>
+<rect class="f" x="56.8" y="87.7" width="64.0" height="208.3" rx="3"/>
+<text class="v" x="88.8" y="81.7" text-anchor="middle">3,1 tys.</text>
 <text class="l" x="88.8" y="316" text-anchor="middle">Fih</text>
-<rect class="f" x="202.4" y="81.6" width="64.0" height="214.4" rx="3"/>
-<text class="v" x="234.4" y="75.6" text-anchor="middle">3,1 tys.</text>
+<rect class="f" x="202.4" y="81.1" width="64.0" height="214.9" rx="3"/>
+<text class="v" x="234.4" y="75.1" text-anchor="middle">3,7 tys.</text>
 <text class="l" x="234.4" y="316" text-anchor="middle">Fih (build)</text>
-<rect class="b" x="348.0" y="121.8" width="64.0" height="174.2" rx="3"/>
-<text class="v" x="380.0" y="115.8" text-anchor="middle">1,1 tys.</text>
+<rect class="b" x="348.0" y="122.2" width="64.0" height="173.8" rx="3"/>
+<text class="v" x="380.0" y="116.2" text-anchor="middle">1,2 tys.</text>
 <text class="l" x="380.0" y="316" text-anchor="middle">C</text>
-<rect class="b" x="493.6" y="153.8" width="64.0" height="142.2" rx="3"/>
-<text class="v" x="525.6" y="147.8" text-anchor="middle">449</text>
+<rect class="b" x="493.6" y="154.3" width="64.0" height="141.7" rx="3"/>
+<text class="v" x="525.6" y="148.3" text-anchor="middle">495</text>
 <text class="l" x="525.6" y="316" text-anchor="middle">C++</text>
-<rect class="b" x="639.2" y="244.4" width="64.0" height="51.6" rx="3"/>
-<text class="v" x="671.2" y="238.4" text-anchor="middle">40</text>
+<rect class="b" x="639.2" y="245.3" width="64.0" height="50.7" rx="3"/>
+<text class="v" x="671.2" y="239.3" text-anchor="middle">40</text>
 <text class="l" x="671.2" y="316" text-anchor="middle">Python</text>
 </svg>

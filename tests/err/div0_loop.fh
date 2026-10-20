@@ -1,5 +1,5 @@
 i = 3
 while 1 {
-  calc(10 / i)
+  calc(10 // i)
   i -= 1
 }

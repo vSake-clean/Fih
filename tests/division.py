@@ -13,7 +13,7 @@ pairs += [(r.randint(-2**31, 2**31 - 1), r.choice([1, -1]) * r.randint(1, 2**31)
 lit = lambda x: f"({x})" if x >= 0 else f"(0-{-x})"
 for a, b in pairs:
     q, m = trunc(a, b)
-    L.append(f'calc("{lit(a)} / {lit(b)}")'); E.append(str(q))
+    L.append(f'calc("{lit(a)} // {lit(b)}")'); E.append(str(q))
     L.append(f'calc("{lit(a)} % {lit(b)}")'); E.append(str(m))
 p = os.path.join(tempfile.mkdtemp(), "d.fh"); open(p, "w").write("\n".join(L) + "\n")
 got = subprocess.run([sys.argv[1], p], capture_output=True, text=True).stdout.split("\n")[:-1]

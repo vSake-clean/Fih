@@ -22,19 +22,30 @@ default rel
 
 global comp_compile, comp_run_jit, comp_write_elf
 global blank, skip_ident, end_check, const_need, const_buf, buf_need, ident_tab
-extern imp_statement, imp_policy, imp_need_base
+extern imp_statement, imp_policy, imp_need_base, imp_mods, imp_reset, imp_math
+extern rt_flt_fmt, rt_numcmp, rt_darith, parse_float, rt_math1, rt_math2
 extern fmt_int
 extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, write_file2
 
 %define K_CONST 0
 %define K_VAR   1
 %define K_REG   2
-; teksty (rodzaj > K_REG): K_TREG — w rax (adres) i rdx (długość),
+; ułamki (import math): K_FCONST — stała (wartość = bity), K_FVAR — zmienna,
+; K_FREG — w xmm0; liczby dynamiczne (całkowita albo ułamek, rodzaj znany
+; dopiero w trakcie): K_DVAR — zmienna, K_DREG — w rax (wartość) i edx
+; (1 całkowita, 2 ułamek); szczegóły w comp_flt.inc
+%define K_FCONST 3
+%define K_FVAR  4
+%define K_FREG  5
+%define K_DVAR  6
+%define K_DREG  7
+%define K_NUM   7               ; ostatni rodzaj liczbowy
+; teksty (rodzaj > K_NUM): K_TREG — w rax (adres) i rdx (długość),
 ; K_TLIT — stała: wartość = przesunięcie w stałych | długość << 32,
 ; K_TVAR — zmienna tekstowa (nr)
-%define K_TREG  3
-%define K_TLIT  4
-%define K_TVAR  5
+%define K_TREG  8
+%define K_TLIT  9
+%define K_TVAR  10
 
 ; części obrazu (dla poprawek adresów)
 %define S_RT    0
@@ -65,23 +76,24 @@ extern die, die_noline, die_name, cur_line, stack_budget, rt_table, rt_begin, wr
 %define RT_INPUTTEXT 19
 %define RT_NL      20
 %define RT_CATINT  21
+%define RT_FLT_OUT 22           ; ..._NL = +1
+%define RT_FLT_OUT_NL 23
+%define RT_NUM_OUT 24           ; ..._NL = +1
+%define RT_NUM_OUT_NL 25
+%define RT_FLT2TEXT 26
+%define RT_NUM2TEXT 27
+%define RT_NUMCMP  28
+%define RT_DARITH  29
+%define RT_IDIVF   30
+%define RT_FMOD    31
+%define RT_FIDIV   32
+%define RT_MATH1   33
+%define RT_MATH2   34
+%define RT_RANDOM  35
 
 %define HDR_SIZE 16
 
-; operatory dwuargumentowe
-%define OP_OR   1
-%define OP_AND  2
-%define OP_EQ   3
-%define OP_NE   4
-%define OP_LT   5
-%define OP_LE   6
-%define OP_GT   7
-%define OP_GE   8
-%define OP_ADD  9
-%define OP_SUB  10
-%define OP_MUL  11
-%define OP_DIV  12
-%define OP_MOD  13
+; operatory dwuargumentowe: OP_* w fih.inc
 
 %define P_NOT 3
 %define P_CMP 4
@@ -183,9 +195,9 @@ ident_tab:
   %assign i i+1
 %endrep
 ; priorytet operatora (indeks OP_*)
-prec_tab: db 0, 1, 2, 4, 4, 4, 4, 4, 4, 5, 5, 6, 6, 6
+prec_tab: db 0, 1, 2, 4, 4, 4, 4, 4, 4, 5, 5, 6, 6, 6, 6
 ; warunek procesora dla porównań: e, ne, l, le, g, ge
-cc_tab:   db 0, 0, 0, 4, 5, 0x0c, 0x0e, 0x0f, 0x0d, 0, 0, 0, 0, 0
+cc_tab:   db 0, 0, 0, 4, 5, 0x0c, 0x0e, 0x0f, 0x0d, 0, 0, 0, 0, 0, 0
 ; słowa kluczowe: długość, tekst; 0 = koniec
 kw_tab:
     db 5, "print"
@@ -254,6 +266,9 @@ var_len:   resd MAX_VARS
 var_off:   resd MAX_VARS
 var_assigned: resb MAX_VARS ; przypisana we wcześniejszej instrukcji (w tekście)
 var_type:  resb MAX_VARS    ; 0 = jeszcze nieznany, 1 = liczba, 2 = tekst
+var_ntype: resb MAX_VARS    ; rodzaj liczby z wnioskowania: 0/1 całkowita, 2 ułamek, 3 dynamiczna
+var_nnew:  resb MAX_VARS    ; rodzaje przypisane w bieżącym przebiegu (suma bitowa)
+expr_unknown: resb 1        ; 1 = instrukcja czyta zmienną o nieznanym rodzaju
 var_proven:   resb MAX_VARS ; na pewno ma wartość w tym miejscu programu
 proof_stack:  resd MAX_VARS
 blocks:    resb MAX_BLOCKS * 32
@@ -535,7 +550,7 @@ patch_here:
 materialize:
     cmp edi, K_REG
     je .ret
-    ja err_need_num
+    ja .nonint
     cmp edi, K_VAR
     je .var
     test rsi, rsi
@@ -563,11 +578,15 @@ materialize:
     EMITD ecx
     pop rcx
     ret
+.nonint:
+    cmp edi, K_NUM
+    ja err_need_num
+    jmp mat_nonint                  ; ułamek / liczba dynamiczna: musi być całkowita
 
 ; load_rcx(edi=rodzaj K_CONST/K_VAR, rsi=wartość) — wartość do rcx; zmienia rax
 load_rcx:
     cmp edi, K_REG
-    ja err_need_num
+    jae .reg
     cmp edi, K_VAR
     je .var
     movsxd rax, esi
@@ -588,6 +607,10 @@ load_rcx:
     add ecx, D_VARS
     EMITD ecx
     pop rcx
+    ret
+.reg:
+    call materialize                ; (K_REG i liczby nie-całkowite)
+    EMIT 0x48, 0x89, 0xc1           ; mov rcx, rax
     ret
 
 ; unpush(r9=pozycja za "push rax" albo -1) — lewy argument wraca do rax:
@@ -661,7 +684,7 @@ fold:
     je .sub
     cmp edi, OP_MUL
     je .mul
-    cmp edi, OP_DIV
+    cmp edi, OP_IDIV
     jae .div
     ; porównanie
     lea rcx, [cc_tab]
@@ -841,7 +864,7 @@ gen_binop:
     mov eax, K_CONST
     jmp .ret
 .no_fold:
-    cmp ebx, OP_DIV
+    cmp ebx, OP_IDIV
     jae .divmod
     ; L do rax, drugi argument X = (r14d rodzaj: K_CONST/K_VAR/K_REG = rcx, r15 wartość)
     cmp esi, K_REG
@@ -1092,6 +1115,8 @@ gen_binop:
     pop rbx
     ret
 
+%include "comp_flt.inc"
+
 ; ===================== parser wyrażeń =====================
 
 ; ws — pomija spacje i tabulatory (r12 < r13); zmienia al
@@ -1183,7 +1208,12 @@ peek_binop:
     ret
 .mul: mov eax, OP_MUL
     ret
-.div: mov eax, OP_DIV
+.div:
+    mov eax, OP_DIV
+    cmp r8b, '/'
+    jne .ret
+    mov eax, OP_IDIV
+    mov ecx, 2
     ret
 .mod: mov eax, OP_MOD
     ret
@@ -1255,16 +1285,19 @@ expr:
     jbe .logic
     cmp eax, OP_GE
     jbe .compare
-    ; + - * / %: prawy argument o priorytecie wyższym
+    ; + - * / // %: prawy argument o priorytecie wyższym
     mov r15d, eax
-    cmp ebx, K_REG
+    cmp eax, OP_DIV
+    jne .arith
+    test byte [imp_mods], POL_MATH
+    jz err_slash
+.arith:
+    cmp ebx, K_NUM
     ja .text_left
-    mov r9, -1
-    cmp ebx, K_REG
-    jne .nopush
-    EMIT 0x50                       ; push rax (lewy argument)
-    mov r9, [code_buf + 8]
-.nopush:
+    push rdi
+    mov edi, ebx
+    call emit_push_left             ; lewy argument w rejestrach na stos
+    pop rdi
     push r9
     push r15
     inc edi
@@ -1272,12 +1305,12 @@ expr:
     pop r15
     pop r9
     mov ecx, eax
-    cmp eax, K_REG
+    cmp eax, K_NUM
     ja .r_text
     mov edi, r15d
     mov esi, ebx
     mov r8, rbp
-    call gen_binop
+    call num_binop
     mov ebx, eax
     mov rbp, rdx
     jmp .loop
@@ -1314,7 +1347,31 @@ expr:
     mov r15d, eax
     mov edi, ebx
     mov rsi, rbp
-    call materialize
+    call truth
+    cmp ebx, K_REG
+    jne .l_test
+    cmp qword [stmt_tmp], 0
+    jne .l_test
+    mov ecx, [code_buf + 8]
+    cmp ecx, [last_set_end]
+    jne .l_test
+    ; lewy argument to wynik porównania: zamiast setcc/movzx/test — skok
+    ; warunkowy (and: gdy fałsz, or: gdy prawda)
+    mov ecx, [last_set_pos]
+    mov [code_buf + 8], rcx
+    mov dword [last_set_end], -1
+    mov edi, [last_set_cc]
+    cmp r15d, OP_AND
+    jne .l_jcc
+    xor edi, 1
+.l_jcc:
+    mov eax, 2
+    call code_need
+    mov byte [rax], 0x0f
+    add dil, 0x80
+    mov [rax + 1], dil
+    jmp .l_slot
+.l_test:
     EMIT 0x48, 0x85, 0xc0, 0x0f     ; test rax, rax / jz albo jnz
     mov eax, 1
     call code_need
@@ -1336,11 +1393,18 @@ expr:
     call expr
     mov edi, eax
     mov rsi, rdx
-    call materialize
+    call truth
     pop r15
     pop rcx
+    cmp eax, K_REG                  ; wynik porównania jest już 0 albo 1
+    jne .l_norm
+    mov eax, [code_buf + 8]
+    cmp eax, [last_set_end]
+    je .l_normed
+.l_norm:
     ; test rax, rax / setnz al / movzx eax, al
     EMIT 0x48, 0x85, 0xc0, 0x0f, 0x95, 0xc0, 0x0f, 0xb6, 0xc0
+.l_normed:
     cmp r15d, OP_AND
     jne .l_or
     EMIT 0xeb, 0x02                 ; jmp .done / .false: xor eax, eax
@@ -1356,23 +1420,19 @@ expr:
     jmp .loop
 
 .compare:
-    cmp ebx, K_REG
+    cmp ebx, K_NUM
     ja .tcompare
     ; łańcuch porównań a < b < c: przy fałszu skok do "wynik 0" (lista na stosie)
     push 0
     mov r15d, eax
 .c_step:
-    mov r9, -1
-    cmp ebx, K_REG
-    jne .c_nopush
-    EMIT 0x50
-    mov r9, [code_buf + 8]
-.c_nopush:
+    mov edi, ebx
+    call emit_push_left
     push r9
     push r15
     mov edi, P_CMP + 1
     call expr
-    cmp eax, K_REG
+    cmp eax, K_NUM
     ja err_cmp_mix
     pop r15
     pop r9
@@ -1392,6 +1452,10 @@ expr:
     ; kolejne porównanie: L do rax, P do rcx, cmp, przy fałszu skok, P zostaje w rax
     push r10
     push rcx
+    cmp ebx, K_REG
+    ja .c_dyn
+    cmp eax, K_REG
+    ja .c_dyn
     mov esi, ebx
     mov r8, rbp
     mov ecx, eax
@@ -1403,18 +1467,73 @@ expr:
     lea rsi, [rsp + 16]
     call emit_j32
     EMIT 0x48, 0x89, 0xc8           ; mov rax, rcx
+    mov ebx, K_REG
+.c_next:
     pop rcx
     pop r10
     add r12, rcx
     mov r15d, r10d
-    mov ebx, K_REG
     jmp .c_step
+.c_dyn:
+    ; ogniwo z ułamkiem albo liczbą dynamiczną: P do rcx, r8d, L do rax, edx,
+    ; rt_numcmp; P zostaje jako liczba dynamiczna (rax, edx)
+    push r9
+    mov edi, eax
+    mov rsi, rdx
+    cmp eax, K_REG
+    je .cd_preg
+    cmp eax, K_FREG
+    je .cd_preg
+    cmp eax, K_DREG
+    je .cd_preg
+    call emit_dyn_rcx
+    jmp .cd_left
+.cd_preg:
+    call emit_dyn
+    EMIT 0x48, 0x89, 0xc1, 0x41, 0x89, 0xd0     ; mov rcx, rax / mov r8d, edx
+.cd_left:
+    pop r9
+    cmp ebx, K_REG
+    je .cd_lone
+    cmp ebx, K_FREG
+    je .cd_lone
+    cmp ebx, K_DREG
+    je .cd_ltwo
+    mov edi, ebx
+    mov rsi, rbp
+    call emit_dyn
+    jmp .cd_cmp
+.cd_lone:
+    EMIT 0x58                       ; pop rax / mov edx, rodzaj
+    mov edi, 1
+    cmp ebx, K_FREG
+    jne .cd_tag
+    mov edi, 2
+.cd_tag:
+    EMIT 0xba
+    EMITD edi
+    jmp .cd_cmp
+.cd_ltwo:
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax
+.cd_cmp:
+    ; push rcx / push r8 / mov edi, op / call rt_numcmp / pop r8 / pop rcx
+    EMIT 0x51, 0x41, 0x50, 0xbf
+    EMITD r15d
+    mov edi, RT_NUMCMP
+    call emit_call_rt
+    EMIT 0x41, 0x58, 0x59, 0x85, 0xc0           ; test eax, eax / jz fałsz
+    mov edi, 4
+    lea rsi, [rsp + 16]
+    call emit_j32
+    EMIT 0x48, 0x89, 0xc8, 0x44, 0x89, 0xc2     ; mov rax, rcx / mov edx, r8d
+    mov ebx, K_DREG
+    jmp .c_next
 .c_last:
     mov ecx, eax
     mov edi, r15d
     mov esi, ebx
     mov r8, rbp
-    call gen_binop
+    call num_binop
     mov ebx, eax
     mov rbp, rdx
     pop rdi                         ; lista skoków "fałsz"
@@ -1457,7 +1576,7 @@ expr:
     call expr
     pop r15
     pop r9
-    cmp eax, K_REG
+    cmp eax, K_NUM
     jbe err_cmp_mix
     mov ecx, eax
     mov edi, r15d
@@ -1509,6 +1628,7 @@ unary:
     jnz .not_loop
     mov edi, P_CMP
     call expr
+    call fconst_truth
     cmp eax, K_CONST
     jne .not_gen
     xor ecx, ecx
@@ -1520,7 +1640,7 @@ unary:
 .not_gen:
     mov edi, eax
     mov rsi, rdx
-    call materialize
+    call truth
     EMIT 0x48, 0x85, 0xc0           ; test rax, rax
     mov edi, 5                      ; setne
     sub edi, ebp                    ; nieparzyście: sete
@@ -1556,6 +1676,13 @@ unary:
     mov rdx, rcx
     jmp .ret
 .neg_gen:
+    cmp eax, K_REG
+    jbe .neg_int
+    cmp eax, K_NUM
+    ja .neg_int                     ; tekst: błąd w materialize
+    call neg_num
+    jmp .ret
+.neg_int:
     mov edi, eax
     mov rsi, rdx
     call materialize
@@ -1576,7 +1703,7 @@ primary:
     pop rax
     AT '['
     jne .ret
-    cmp eax, K_REG
+    cmp eax, K_NUM
     jbe err_index_int
     call index_gen
     jmp .post
@@ -1622,6 +1749,50 @@ primary0:
     dec qword [paren_depth]
     ret
 .number:
+    ; cyfry '.' cyfra: ułamek (tylko z import math)
+    mov rdi, r12
+.n_scan:
+    inc rdi
+    cmp rdi, r13
+    jae .n_int
+    movzx eax, byte [rdi]
+    sub eax, '0'
+    cmp eax, 9
+    jbe .n_scan
+    cmp byte [rdi], '.'
+    jne .n_int
+    lea rax, [rdi + 1]
+    cmp rax, r13
+    jae .n_int
+    movzx eax, byte [rdi + 1]
+    sub eax, '0'
+    cmp eax, 9
+    ja .n_int
+    test byte [imp_mods], POL_MATH
+    jz err_float_math
+    lea rdx, [rdi + 1]              ; cyfry ułamka
+    mov rcx, rdx
+.n_frac:
+    inc rcx
+    cmp rcx, r13
+    jae .n_fdone
+    movzx eax, byte [rcx]
+    sub eax, '0'
+    cmp eax, 9
+    jbe .n_frac
+.n_fdone:
+    push rcx
+    mov rsi, rdi
+    sub rsi, r12
+    mov rdi, r12
+    sub rcx, rdx
+    call parse_float
+    pop r12
+    jc err_big
+    mov rdx, rax
+    mov eax, K_FCONST
+    ret
+.n_int:
     xor edx, edx
 .digit:
     imul rdx, rdx, 10
@@ -1656,6 +1827,18 @@ primary0:
     push rbx
     mov rbx, r12
     call skip_ident
+    ; math.nazwa: funkcja albo stała modułu math
+    mov rax, r12
+    sub rax, rbx
+    cmp rax, 4
+    jne .not_math
+    cmp dword [rbx], 'math'
+    jne .not_math
+    AT '.'
+    jne .not_math
+    pop rbx
+    jmp math_call
+.not_math:
     mov rdi, rbx
     mov rsi, r12
     sub rsi, rbx
@@ -1703,8 +1886,12 @@ primary0:
     mov eax, K_VAR
     lea rcx, [var_type]
     cmp byte [rcx + rbx], 2
-    jne .var_kind
+    jne .var_num
     mov eax, K_TVAR
+    jmp .var_kind
+.var_num:
+    mov edi, ebx
+    call var_nkind
 .var_kind:
     mov edx, ebx
     pop rbx
@@ -1741,7 +1928,7 @@ primary0:
     jne err_rparen_e
     inc r12
     dec qword [paren_depth]
-    cmp eax, K_REG
+    cmp eax, K_NUM
     jbe err_len_text
     cmp eax, K_TLIT
     jne .len_gen
@@ -2103,7 +2290,7 @@ to_text:
     mov eax, edi
     mov rdx, rsi
     cmp edi, K_REG
-    ja .ret
+    ja .nonint
     cmp edi, K_CONST
     je .const
     call materialize
@@ -2113,6 +2300,10 @@ to_text:
     mov eax, K_TREG
 .ret:
     ret
+.nonint:
+    cmp edi, K_NUM
+    ja .ret
+    jmp num_text
 .const:
     push rbx
     push rcx
@@ -2188,6 +2379,8 @@ lit_concat:
 %macro LIT_LIKE 1
     cmp %1, K_TLIT
     je %%done
+    cmp %1, K_FCONST
+    je %%done
     cmp %1, K_CONST
 %%done:
 %endmacro
@@ -2223,7 +2416,7 @@ cat_gen:
     mov eax, K_TLIT
     jmp .ret
 .run:
-    cmp ebx, K_REG
+    cmp ebx, K_NUM
     jbe .run_any
     cmp r14d, K_REG                 ; tekst + liczba (nie stała): cyfry
     je .ci_reg                      ; dopisywane od razu (rt_cat_int)
@@ -2234,6 +2427,10 @@ cat_gen:
     je .l_treg
     cmp ebx, K_REG
     je .l_reg
+    cmp ebx, K_FREG
+    je .l_freg
+    cmp ebx, K_DREG
+    je .l_dreg
     ; L w pamięci albo stała: P do rcx, r8, potem L do rax, rdx
     mov edi, r14d
     mov rsi, r15
@@ -2253,6 +2450,8 @@ cat_gen:
     je .t_undo
     cmp r14d, K_TVAR
     je .t_undo
+    cmp r14d, K_FCONST
+    je .t_undo
     cmp r14d, K_CONST
     jne .t_pop
 .t_undo:
@@ -2270,10 +2469,24 @@ cat_gen:
     call .right_regs
     EMIT 0x5a, 0x58                 ; pop rdx / pop rax
     jmp .cat
+.l_freg:
+    call .right_regs
+    EMIT 0x58                       ; pop rax (bity ułamka L)
+    mov edi, RT_FLT2TEXT
+    call emit_call_rt
+    jmp .cat
+.l_dreg:
+    call .right_regs
+    EMIT 0x5a, 0x58                 ; pop rdx / pop rax (liczba dynamiczna L)
+    mov edi, RT_NUM2TEXT
+    call emit_call_rt
+    jmp .cat
 .l_reg:
     cmp r14d, K_TLIT
     je .r_undo
     cmp r14d, K_TVAR
+    je .r_undo
+    cmp r14d, K_FCONST
     je .r_undo
     cmp r14d, K_CONST
     jne .r_pop
@@ -2477,8 +2690,7 @@ index_gen:
     je .slice
     xor edi, edi
     call expr
-    cmp eax, K_REG
-    ja err_index_num
+    call int_index
     mov r14d, eax
     mov r15, rdx
     call ws
@@ -2496,7 +2708,7 @@ index_gen:
     je .s_nob
     xor edi, edi
     call expr
-    cmp eax, K_REG
+    cmp eax, K_NUM
     ja err_index_num
     mov edi, eax
     mov rsi, rdx
@@ -2564,6 +2776,44 @@ index_gen:
     mov edi, ebx
     mov rsi, rbp
     jmp tmaterialize
+
+; int_index(eax, rdx = indeks) — ułamek albo liczba dynamiczna zamieniana na
+; liczbę całkowitą w rax (inaczej błąd w trakcie); tekst: błąd
+int_index:
+    cmp eax, K_REG
+    jbe .ret
+    cmp eax, K_NUM
+    ja err_index_num
+    mov edi, eax
+    mov rsi, rdx
+    call materialize
+    mov eax, K_REG
+.ret:
+    ret
+
+; var_nkind(edi = numer zmiennej liczbowej) -> eax = K_VAR / K_FVAR / K_DVAR
+; Rodzaj z wnioskowania: z poprzednich przebiegów i z przypisań już
+; widzianych w tym. Bez żadnej informacji — jak liczba całkowita, ale
+; wyrażenie jest "niepewne" (expr_unknown: store_var nie dopisze wtedy
+; rodzaju całkowitego); zmienia tylko eax
+var_nkind:
+    push rcx
+    lea rcx, [var_ntype]
+    movzx ecx, byte [rcx + rdi]
+    lea rax, [var_nnew]
+    or cl, [rax + rdi]
+    jnz .known
+    mov byte [expr_unknown], 1
+.known:
+    mov eax, K_VAR
+    cmp ecx, 2
+    jb .ret
+    mov eax, K_FVAR
+    je .ret
+    mov eax, K_DVAR
+.ret:
+    pop rcx
+    ret
 
 ; utf8_count(rsi=dane, rcx=długość) -> rax = liczba znaków
 utf8_count:
@@ -2705,6 +2955,7 @@ lbrace:
 
 ; emit_cond(eax=rodzaj, rdx=wartość, rsi=adres listy "fałsz") — skok, gdy warunek fałszywy
 emit_cond:
+    call fconst_truth
     cmp eax, K_CONST
     jne .not_const
     push rsi
@@ -2735,7 +2986,7 @@ emit_cond:
     mov edi, eax
     push rsi
     mov rsi, rdx
-    call materialize
+    call truth
     call tmp_done
     pop rsi
     EMIT 0x48, 0x85, 0xc0           ; test rax, rax
@@ -2750,8 +3001,24 @@ store_var:
     mov ebp, ebx
     shl ebp, 4
     add ebp, D_VARS
-    cmp eax, K_REG
+    cmp eax, K_NUM
     ja .text
+    ; rodzaj liczby do wnioskowania (comp_compile); wyrażenie z nieznaną
+    ; zmienną: pewny jest tylko ułamek
+    call ncls
+    cmp byte [expr_unknown], 0
+    je .note
+    cmp ecx, 2
+    jne .noted
+.note:
+    lea rsi, [var_nnew]
+    or [rsi + rbx], cl
+.noted:
+    lea rsi, [var_ntype]
+    movzx ecx, byte [rsi + rbx]
+    cmp ecx, 2
+    je .flt
+    ja .dyn
     cmp eax, K_CONST
     jne .gen
     movsxd rcx, edx
@@ -2768,6 +3035,34 @@ store_var:
     EMIT 0x49, 0x89, 0x87           ; mov [r15 + disp32], rax
     EMITD ebp
     jmp .flag
+.flt:
+    ; zmienna ułamkowa (w ostatnim przebiegu trafiają tu tylko ułamki)
+    cmp eax, K_FREG
+    jne .flt_rax
+    EMIT 0xf2, 0x41, 0x0f, 0x11, 0x87   ; movsd [r15 + disp32], xmm0
+    EMITD ebp
+    jmp .flag
+.flt_rax:
+    mov edi, eax
+    mov rsi, rdx
+    call emit_dyn                   ; (ułamek: bity w rax)
+    EMIT 0x49, 0x89, 0x87
+    EMITD ebp
+    jmp .flag
+.dyn:
+    ; liczba dynamiczna: wartość i rodzaj (bajt rodzaju to też flaga "ma wartość")
+    mov edi, eax
+    mov rsi, rdx
+    call emit_dyn
+    EMIT 0x49, 0x89, 0x87           ; mov [r15 + disp32], rax
+    EMITD ebp
+    EMIT 0x41, 0x88, 0x97           ; mov [r15 + disp32 + 8], dl
+    add ebp, 8
+    EMITD ebp
+    lea rax, [var_proven]
+    cmp byte [rax + rbx], 0
+    jne .done
+    jmp .proven
 .text:
     mov edi, eax
     mov rsi, rdx
@@ -2784,6 +3079,7 @@ store_var:
     add ebp, 8
     EMITD ebp
     EMIT 1
+.proven:
     ; od tej chwili (do końca bieżącego bloku) zmienna na pewno ma wartość
     lea rax, [var_proven]
     mov byte [rax + rbx], 1
@@ -2846,6 +3142,7 @@ statement:
     push rbp
     push r14
     push r15
+    mov byte [expr_unknown], 0
     call blank
     cmp r12, r13
     jae .ret
@@ -2982,7 +3279,13 @@ statement:
     mov edi, r14d
     mov rsi, r15
     cmp edi, K_REG
+    jbe .out_intk
+    cmp edi, K_NUM
     ja .out_text
+    mov ecx, [str_nl]
+    call emit_num_out
+    jmp .out_done
+.out_intk:
     call materialize
     mov edi, RT_INT
     cmp dword [str_nl], 0
@@ -3040,6 +3343,15 @@ statement:
 .c_emit:
     mov edi, eax
     mov rsi, rdx
+    cmp edi, K_REG
+    jbe .c_int
+    cmp edi, K_NUM
+    ja .c_int                       ; tekst: błąd w materialize
+    mov ecx, 1
+    call emit_num_out
+    call tmp_done
+    jmp .ret
+.c_int:
     call materialize
     mov edi, RT_INT_NL
     call emit_call_rt
@@ -3129,6 +3441,19 @@ statement:
     inc r12
     jmp .a_var
 .a_op:
+    cmp al, '/'
+    jne .a_op1
+    cmp dl, '/'
+    jne .a_op1
+    lea rcx, [r12 + 2]              ; //=
+    cmp rcx, r13
+    jae err_assign
+    cmp byte [rcx], '='
+    jne err_assign
+    mov r14d, OP_IDIV
+    inc r12
+    jmp .a_op_ok
+.a_op1:
     cmp dl, '='
     jne err_assign
     mov r14d, OP_ADD
@@ -3147,6 +3472,11 @@ statement:
     cmp al, '%'
     jne err_assign
 .a_op_ok:
+    cmp r14d, OP_DIV
+    jne .a_op_go
+    test byte [imp_mods], POL_MATH
+    jz err_slash
+.a_op_go:
     add r12, 2
 .a_var:
     mov rdi, rbx
@@ -3201,14 +3531,16 @@ statement:
     jz .a_plain_type
     cmp ecx, 2
     je .a_text_op
-    cmp eax, K_REG
+    cmp eax, K_NUM
     ja .a_mismatch
     mov ecx, eax                    ; x op wyrażenie
+    mov edi, ebx
+    call var_nkind
+    mov esi, eax
     mov edi, r14d
-    mov esi, K_VAR
     mov r8d, ebx
     mov r9, -1
-    call gen_binop
+    call num_binop
     jmp .a_store
 .a_text_op:
     ; s += wyrażenie: dopisanie (liczba jako tekst); inne działania to błąd
@@ -3294,7 +3626,7 @@ statement:
 .a_plain_type:
     ; rodzaj zmiennej ustala pierwsze przypisanie w tekście programu
     mov r8d, 1
-    cmp eax, K_REG
+    cmp eax, K_NUM
     jbe .a_kind
     mov r8d, 2
 .a_kind:
@@ -3441,7 +3773,9 @@ comp_compile:
     push r15
     lea rax, [rdi + rsi]
     mov [src_end], rax
-    mov r14, rdi                    ; początek bieżącej linii
+    push rdi                        ; początek programu (kolejne przebiegi)
+.pass:
+    mov r14, [rsp]                  ; początek bieżącej linii
     ; limit nawiasów jak w expr.asm: (budżet - 16) / 48 + 1
     mov rax, [stack_budget]
     sub rax, 16
@@ -3487,6 +3821,35 @@ comp_compile:
     mov [cur_line], rax
     jmp err_unclosed
 .done:
+    ; wnioskowanie rodzajów liczb: gdy jakaś zmienna dostała rodzaj, którego
+    ; ten przebieg nie zakładał, cała kompilacja jeszcze raz (rodzaje tylko
+    ; rosną: całkowita -> ułamek -> dynamiczna, więc to się kończy)
+    test byte [imp_mods], POL_MATH
+    jz .final
+    xor ecx, ecx
+    xor edx, edx
+    lea rsi, [var_ntype]
+    lea rdi, [var_nnew]
+.infer:
+    cmp rcx, [nvars]
+    jae .infer_done
+    mov al, [rdi + rcx]
+    mov ah, [rsi + rcx]
+    or al, ah
+    cmp al, ah
+    je .infer_next
+    mov [rsi + rcx], al
+    mov edx, 1
+.infer_next:
+    inc rcx
+    jmp .infer
+.infer_done:
+    test edx, edx
+    jz .final
+    call comp_reset
+    jmp .pass
+.final:
+    pop rax
     mov edi, RT_EXIT
     call emit_call_rt
     call imp_policy
@@ -3499,6 +3862,37 @@ comp_compile:
     pop rbp
     pop rbx
     ret
+
+; comp_reset — stan przed pierwszą linią (bez var_ntype) dla kolejnego przebiegu
+comp_reset:
+    xor eax, eax
+    mov [code_buf + 8], rax
+    mov [cold_buf + 8], rax
+    mov [const_buf + 8], rax
+    mov [fix_buf + 8], rax
+    mov [nvars], rax
+    mov [block_sp], rax
+    mov [proof_sp], rax
+    mov [seen_stmt], rax
+    mov [stmt_tmp], rax
+    mov [paren_depth], rax
+    mov dword [last_set_end], -1
+    lea rdi, [htab]
+    mov ecx, HSLOTS * 16
+    rep stosb
+    lea rdi, [var_assigned]
+    mov ecx, MAX_VARS
+    rep stosb
+    lea rdi, [var_type]
+    mov ecx, MAX_VARS
+    rep stosb
+    lea rdi, [var_nnew]
+    mov ecx, MAX_VARS
+    rep stosb
+    lea rdi, [var_proven]
+    mov ecx, MAX_VARS
+    rep stosb
+    jmp imp_reset
 
 ; link — składa obraz: rt, nagłówek, kod, kod rzadki, stałe; nazwy zmiennych
 ; (do komunikatów błędów) trafiają na koniec stałych
@@ -3805,3 +4199,10 @@ CERR err_index_int,     "indeks [ ] działa tylko na tekście"
 CERR err_index_num,     "indeks musi być liczbą"
 CERR err_rbracket,      "brak ']' po indeksie"
 CERR err_char_lit,      "zły zapis znaku (przykład: '+')"
+CERR err_math_import,   "math.… wymaga import math na początku programu"
+CERR err_math_fn,       "nieznana funkcja modułu math"
+CERR err_math_only,     "tej funkcji math nie ma na liście only w import math"
+CERR err_math_paren,    "oczekiwano '(' po nazwie funkcji math"
+CERR err_math_args,     "zła liczba argumentów funkcji math"
+CERR err_float_math, "ułamki (liczby z kropką) wymagają import math"
+CERR err_slash,         "dzielenie / daje ułamek: dodaj import math albo użyj // (dzielenie całkowite)"

@@ -1,10 +1,10 @@
 ; expr.asm — wyrażenia całkowite (int64) dla calc("...")
 ;
 ;   expr   = term   (('+' | '-') term)*
-;   term   = factor (('*' | '/' | '%') factor)*
+;   term   = factor (('*' | '//' | '%') factor)*
 ;   factor = ('-' | '+')* (liczba | '(' expr ')')
 ;
-; Przepełnienie (+ - *, unarny minus, INT64_MIN / -1) jest błędem; / obcina
+; Przepełnienie (+ - *, unarny minus, INT64_MIN // -1) jest błędem; // obcina
 ; w stronę zera, % ma znak dzielnej. Oba poziomy priorytetu liczone są w jednej pętli
 ; (eval_sum); rekurencja jest tylko dla nawiasów.
 ;
@@ -186,8 +186,6 @@ eval_sum:
     je .q_add
     cmp dl, '-'
     je .q_sub
-    cmp dl, '/'
-    je .q_div
     cmp dl, '%'
     je .q_mod
 .mul_loop_slow:
@@ -227,15 +225,6 @@ eval_sum:
     imul rbp, rax
     jo err_overflow
     jmp .mul_loop
-.q_div:
-    add r12, 3
-    call factor_ns
-    mov rcx, rax
-    mov rax, rbp
-    call divide
-    jc err_overflow
-    mov rbp, rax
-    jmp .mul_loop
 .q_mod:
     add r12, 3
     call factor_ns
@@ -273,7 +262,9 @@ eval_sum:
     jo err_overflow
     jmp .mul_loop
 .div:
-    inc r12
+    cmp byte [r12 + 1], '/'         ; tylko // (dzielenie całkowite); samo /
+    jne err_unexpected              ; zgłasza kompilator (wymaga import math)
+    add r12, 2
     call factor
     mov rcx, rax
     mov rax, rbp

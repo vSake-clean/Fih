@@ -17,11 +17,18 @@
 - `input()`, `inputchar()`, `inputok()`, `eof()`, `write`, literały znakowe `'+'`.
 - Przykład: kalkulator (`examples/kalkulator.fh`).
 
+## 0.4: uprawnienia, teksty, ułamki (w budowie)
+
+- Importy z uprawnieniami (`import math`, `files`, `commands`, `net`, `only`)
+  i blokady jądra (Landlock, limity, seccomp) — gotowe.
+- Teksty w zmiennych, łączenie, `len`, indeksy, wycinki, `inputtext()` — gotowe.
+- Ułamki, `/` (ułamek) i `//` (całkowite), moduł `math` — gotowe.
+- Funkcje modułów `files`, `commands`, `net` — dalej.
+
 Szczegóły: [SPEC.md](SPEC.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Później (pomysły, bez kolejności i obietnic)
 
-- napisy w zmiennych, łączenie napisów, `print` zmiennej,
 - funkcje,
 - tablice,
 - argumenty wiersza poleceń, wczytywanie napisów,

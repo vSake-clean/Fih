@@ -65,7 +65,7 @@ while len(exprs) < n:
     if c_safe(e) is not None: exprs.append(e)
 tmp = tempfile.mkdtemp()
 fh, c, exe, bin_ = (os.path.join(tmp, x) for x in ("p.fh", "p.c", "p_c", "p_fih"))
-open(fh, "w").write("".join(f'calc("{e}")\n' for e in exprs))
+open(fh, "w").write("".join(f'calc("{e.replace("/", "//")}")\n' for e in exprs))
 CH = 500
 with open(c, "w") as f:
     f.write("#include <stdio.h>\n#include <stdint.h>\n")

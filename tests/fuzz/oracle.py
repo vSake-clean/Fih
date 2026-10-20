@@ -46,6 +46,7 @@ MSG = {
     "e_deep": "wyrażenie zbyt głęboko zagnieżdżone",
     "func": "oczekiwano '()' po nazwie funkcji",
     "char_lit": "zły zapis znaku (przykład: '+')",
+    "slash": "dzielenie / daje ułamek: dodaj import math albo użyj // (dzielenie całkowite)",
 }
 FUNCS = (b"input", b"inputchar", b"inputok", b"eof")
 LINE_MAX = 65536            # linia wejścia od tej długości jest za długa
@@ -72,7 +73,7 @@ def ident_char(c): return ident_start(c) or 48 <= c <= 57
 
 # poziomy priorytetu operatorów dwuargumentowych
 PREC = {"or": 1, "and": 2, "==": 4, "!=": 4, "<": 4, "<=": 4, ">": 4, ">=": 4,
-        "+": 5, "-": 5, "*": 6, "/": 6, "%": 6}
+        "+": 5, "-": 5, "*": 6, "/": 6, "//": 6, "%": 6}
 P_NOT, P_CMP = 3, 4
 
 
@@ -101,7 +102,7 @@ class Parser:
         w = self.word()
         if w in (b"and", b"or"): return w.decode()
         s = self.src[self.p:min(self.p + 2, self.bound)]
-        if s in (b"==", b"!=", b"<=", b">="): return s.decode()
+        if s in (b"==", b"!=", b"<=", b">=", b"//"): return s.decode()
         c = s[:1]
         if c and c in b"<>+-*/%": return c.decode()
         return None
@@ -114,6 +115,7 @@ class Parser:
             op = self.binop()
             if op is None or PREC[op] < minp: return lhs
             self.p += len(op)
+            if op == "/": self.err("slash")      # bez import math
             if PREC[op] == P_CMP:
                 ops, rest = [op], [self.expr(P_CMP + 1, depth)]
                 while True:
@@ -382,8 +384,12 @@ class Parser:
         if self.at(61) and self.src[self.q + 1:self.q + 2] != b"=":
             op = "="
             self.q += 1
+        elif self.src[self.q:self.q + 3] == b"//=":
+            op = "//"
+            self.q += 3
         elif self.q + 1 < self.eol and self.src[self.q] in b"+-*/%" and self.src[self.q + 1] == 61:
             op = chr(self.src[self.q])
+            if op == "/": self.err("slash")
             self.q += 2
         else:
             self.err("assign")
@@ -429,9 +435,9 @@ def arith(op, a, b, line):
     if op == "*": return chk(a * b, line)
     if b == 0: raise FihError("e_div0", line)
     if b == -1:
-        return chk(-a, line) if op == "/" else 0
+        return chk(-a, line) if op == "//" else 0
     q = abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
-    return q if op == "/" else a - q * b
+    return q if op == "//" else a - q * b
 
 
 CMP = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b, "<": lambda a, b: a < b,
