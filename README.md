@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml/badge.svg)](https://github.com/vSake-clean/Fih/actions/workflows/ci.yml)
 
+🇵🇱 Polski · 🇬🇧 [English](README.en.md)
+
 Mały język programowania z kompilatorem napisanym w czystym assembly x86-64
 (NASM), bez libc — tylko syscalle Linuksa. Program jest tłumaczony na kod
 maszynowy: uruchamiany od razu z pamięci (JIT) albo zapisywany jako
