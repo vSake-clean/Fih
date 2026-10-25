@@ -256,3 +256,17 @@ docs/           wykresy kolumnowe SVG
 
 [MIT](LICENSE) © 2026 vSake. Kod Fih można dowolnie używać, zmieniać i rozpowszechniać,
 także komercyjnie, pod warunkiem zachowania informacji o autorze i treści licencji.
+
+---
+
+## Inne projekty autora
+
+- **[Szept](https://github.com/vSake-clean/Szept)** — komunikator na Androida bez własnego serwera
+- **[LunarDraw](https://github.com/vSake-clean/LunarDraw)** — aplikacja do rysowania z warstwami (GTK3/Cairo)
+- **[LuminaView](https://github.com/vSake-clean/LuminaView)** — szybka, lekka przeglądarka obrazów Qt5 dla Linuksa
+- **[StatusCycler](https://github.com/vSake-clean/StatusCycler)** — plugin Vencord zmieniający status na Discordzie
+- **[vencord-AutoReply](https://github.com/vSake-clean/vencord-AutoReply)** — plugin Vencord do automatycznych odpowiedzi
+- **[vencord-StickyNotes](https://github.com/vSake-clean/vencord-StickyNotes)** — plugin Vencord z notatkami przy użytkownikach Discorda
+- **[vencord-friendgroups](https://github.com/vSake-clean/vencord-friendgroups)** — plugin Vencord do grupowania znajomych
+
+Jeśli projekt Ci się podoba, zostaw ⭐ — to bardzo pomaga!
