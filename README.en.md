@@ -276,7 +276,7 @@ are kept.
 
 ## More projects by vSake
 
-- **[Szept](https://github.com/vSake-clean/Szept)** — serverless Android messenger
+- **[Szept](https://github.com/vSake-clean/Szept)** — end-to-end encrypted Android messenger with no server of its own (runs over Nostr relays)
 - **[LunarDraw](https://github.com/vSake-clean/LunarDraw)** — GTK3/Cairo drawing app with layers
 - **[LuminaView](https://github.com/vSake-clean/LuminaView)** — fast, lightweight Qt5 image viewer for Linux
 - **[StatusCycler](https://github.com/vSake-clean/StatusCycler)** — Vencord plugin that cycles your Discord custom status
