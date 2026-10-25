@@ -263,7 +263,7 @@ także komercyjnie, pod warunkiem zachowania informacji o autorze i treści lice
 
 ## Inne projekty autora
 
-- **[Szept](https://github.com/vSake-clean/Szept)** — komunikator na Androida bez własnego serwera
+- **[Szept](https://github.com/vSake-clean/Szept)** — szyfrowany komunikator na Androida bez własnego serwera (działa przez przekaźniki Nostr)
 - **[LunarDraw](https://github.com/vSake-clean/LunarDraw)** — aplikacja do rysowania z warstwami (GTK3/Cairo)
 - **[LuminaView](https://github.com/vSake-clean/LuminaView)** — szybka, lekka przeglądarka obrazów Qt5 dla Linuksa
 - **[StatusCycler](https://github.com/vSake-clean/StatusCycler)** — plugin Vencord zmieniający status na Discordzie
